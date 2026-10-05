@@ -1,0 +1,29 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package steward.obligations.v1;
+
+option go_package = "github.com/Steward-GRC/steward-obligations/gen/go/steward/obligations/v1;obligationsv1";
+
+// WelcomeService exposes admin-triggered welcome-email actions.
+service WelcomeService {
+  // ResendWelcome re-sends the "welcome-account" onboarding email to a single
+  // user. It is an explicit admin action, so it bypasses the new-user send
+  // throttle (unlike the automatic account-creation send) and the opt-out
+  // suppressor (welcome-account always sends).
+  rpc ResendWelcome(ResendWelcomeRequest) returns (ResendWelcomeResponse);
+}
+
+message ResendWelcomeRequest {
+  // user_id identifies the recipient. the service resolves the email
+  // address and display name from the identity service.
+  string user_id = 1;
+}
+
+message ResendWelcomeResponse {
+  // sent is true when the welcome email was rendered and handed to the mail
+  // transport.
+  bool sent = 1;
+}

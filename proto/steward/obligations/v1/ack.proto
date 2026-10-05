@@ -1,0 +1,110 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+package steward.obligations.v1;
+
+import "google/protobuf/timestamp.proto";
+import "steward/obligations/v1/obligations.proto";
+
+option go_package = "github.com/Steward-GRC/steward-obligations/gen/go/steward/obligations/v1;obligationsv1";
+
+service AckService {
+  rpc RecordAck(RecordAckRequest) returns (RecordAckResponse);
+  rpc RecordView(RecordViewRequest) returns (RecordViewResponse);
+  rpc GetAckStatus(GetAckStatusRequest) returns (GetAckStatusResponse);
+  // TransferAcknowledgments moves a SOURCE user's policy
+  // acknowledgements onto a TARGET user as part of an admin account merge,
+  // with DEDUPE: for each acknowledged policy_version, if BOTH users acked it
+  // the EARLIEST acked_at is kept and the source row is dropped; if only the
+  // source acked it, the ack is re-pointed to the target (satisfying the
+  // target's obligation with NO re-ack). It is IDEMPOTENT — re-running with the
+  // same merge_operation_id after a partial failure never double-applies or
+  // loses an ack. Set dry_run=true for the merge preview (reports what WOULD
+  // move, mutates nothing). Admin/merge-orchestrator gated.
+  rpc TransferAcknowledgments(TransferAcknowledgmentsRequest) returns (TransferAcknowledgmentsResponse);
+}
+
+// AckTransferResolution records how one policy_version's acknowledgement was
+// (or would be) resolved during a merge transfer.
+enum AckTransferResolution {
+  ACK_TRANSFER_RESOLUTION_UNSPECIFIED = 0;
+  ACK_TRANSFER_RESOLUTION_MOVED = 1; // only source acked -> re-pointed to target
+  ACK_TRANSFER_RESOLUTION_KEPT_EARLIEST = 2; // both acked, source earlier -> target ack backdated to source, source dropped
+  ACK_TRANSFER_RESOLUTION_TARGET_KEPT = 3; // both acked, target earlier/equal -> source dropped, target's ack kept
+}
+
+message AckTransferItem {
+  string policy_version_id = 1;
+  google.protobuf.Timestamp source_acked_at = 2;
+  google.protobuf.Timestamp target_acked_at = 3; // zero when target had no prior ack
+  AckTransferResolution resolution = 4;
+}
+
+message TransferAcknowledgmentsRequest {
+  string source_user_id = 1;
+  string target_user_id = 2;
+  string actor_user_id = 3; // admin performing the merge (audit actor)
+  bool dry_run = 4; // true = preview only, no mutation
+  string merge_operation_id = 5; // idempotency correlation from the identity orchestrator
+}
+message TransferAcknowledgmentsResponse {
+  int32 moved = 1; // source-only acks re-pointed to target
+  int32 deduped = 2; // both acked -> one kept (earliest), source dropped
+  repeated AckTransferItem items = 3; // per-policy_version detail for the preview
+}
+
+message RecordAckRequest {
+  string policy_version_id = 1;
+}
+message RecordAckResponse {
+  Acknowledgment acknowledgment = 1;
+}
+
+message RecordViewRequest {
+  string policy_version_id = 1;
+}
+message RecordViewResponse {}
+
+message GetAckStatusRequest {
+  string user_id = 1;
+  string policy_version_id = 2;
+}
+message GetAckStatusResponse {
+  bool acknowledged = 1;
+  google.protobuf.Timestamp acked_at = 2;
+}
+
+message ObligationItem {
+  string policy_id = 1;
+  string number = 2;
+  string title = 3;
+  int32 version_no = 4;
+  string policy_version_id = 5;
+}
+message GetMyObligationsRequest {
+  string user_id = 1;
+}
+message GetMyObligationsResponse {
+  repeated ObligationItem obligations = 1;
+}
+message GetObligatedAudienceCountRequest {
+  string policy_id = 1;
+}
+message GetObligatedAudienceCountResponse {
+  int32 count = 1;
+}
+
+message MyAckSummaryRequest {
+  string user_id = 1;
+}
+message MyAckSummaryResponse {
+  int32 required = 1;
+  int32 done = 2;
+}
+
+service ObligationService {
+  rpc GetMyObligations(GetMyObligationsRequest) returns (GetMyObligationsResponse);
+  rpc GetObligatedAudienceCount(GetObligatedAudienceCountRequest) returns (GetObligatedAudienceCountResponse);
+  rpc MyAckSummary(MyAckSummaryRequest) returns (MyAckSummaryResponse);
+}
