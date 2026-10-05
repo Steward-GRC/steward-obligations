@@ -1,0 +1,23 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+package steward.obligations.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Steward-GRC/steward-obligations/gen/go/steward/obligations/v1;obligationsv1";
+
+message Acknowledgment {
+  string id = 1;
+  string user_id = 2;
+  string policy_version_id = 3;
+  google.protobuf.Timestamp acked_at = 4;
+}
+
+message NotificationPref {
+  string user_id = 1;
+  bool email = 2;
+  bool in_app = 3;
+  bool push = 4;
+}

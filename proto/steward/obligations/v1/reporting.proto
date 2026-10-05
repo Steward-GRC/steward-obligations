@@ -1,0 +1,71 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+package steward.obligations.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Steward-GRC/steward-obligations/gen/go/steward/obligations/v1;obligationsv1";
+
+service ReportingService {
+  rpc GetCompletionReport(GetCompletionReportRequest) returns (GetCompletionReportResponse);
+  rpc GetAckRoster(GetAckRosterRequest) returns (GetAckRosterResponse);
+  rpc GetAckActivity(GetAckActivityRequest) returns (GetAckActivityResponse);
+  rpc ExportAcks(ExportAcksRequest) returns (ExportAcksResponse);
+}
+
+message GetCompletionReportRequest {
+  string policy_version_id = 1;
+  string group_id = 2; // optional: filter by group
+}
+message GetCompletionReportResponse {
+  int32 total_audience = 1;
+  int32 total_acked = 2;
+  float completion_pct = 3;
+  repeated OverdueEntry overdue = 4;
+  float avg_days_to_ack = 5;
+  int32 viewed_not_acked_count = 6;
+}
+message OverdueEntry {
+  string user_id = 1;
+  string email = 2;
+}
+
+message GetAckRosterRequest {
+  string policy_version_id = 1;
+  string group_id = 2;
+}
+message AckRosterEntry {
+  string user_id = 1;
+  string email = 2;
+  google.protobuf.Timestamp acked_at = 3; // unset for pending entries
+}
+message GetAckRosterResponse {
+  repeated AckRosterEntry acked = 1;
+  repeated AckRosterEntry pending = 2;
+}
+
+message GetAckActivityRequest {
+  string policy_version_id = 1;
+  string group_id = 2;
+  int32 days = 3;
+}
+message AckActivityDay {
+  string date = 1;
+  int32 acks = 2;
+  int32 views = 3;
+} // date = YYYY-MM-DD (UTC)
+message GetAckActivityResponse {
+  repeated AckActivityDay days = 1;
+}
+
+message ExportAcksRequest {
+  string policy_version_id = 1;
+  string format = 2;
+  /* "csv"|"json" */
+}
+message ExportAcksResponse {
+  bytes data = 1;
+  string content_type = 2;
+}

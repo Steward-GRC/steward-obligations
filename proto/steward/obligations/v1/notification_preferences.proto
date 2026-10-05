@@ -1,0 +1,178 @@
+// Copyright 2026 The Steward Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+package steward.obligations.v1;
+
+import "steward/obligations/v1/obligations.proto";
+
+option go_package = "github.com/Steward-GRC/steward-obligations/gen/go/steward/obligations/v1;obligationsv1";
+
+// NotifCadence is the per-category (or per-type-override) delivery frequency a
+// user may choose. OFF is rejected server-side for mandatory categories
+// (compliance/security/transactional) — the compliance floor is enforced at
+// the write, not only at send time.
+enum NotifCadence {
+  NOTIF_CADENCE_UNSPECIFIED = 0;
+  NOTIF_CADENCE_IMMEDIATE = 1;
+  NOTIF_CADENCE_DAILY = 2;
+  NOTIF_CADENCE_WEEKLY = 3;
+  NOTIF_CADENCE_OFF = 4;
+}
+
+// NotifCategory is the taxonomy category every notification kind rolls up to.
+// compliance/security/transactional are mandatory (cannot be OFF); workflow
+// and informational are optional.
+enum NotifCategory {
+  NOTIF_CATEGORY_UNSPECIFIED = 0;
+  NOTIF_CATEGORY_COMPLIANCE = 1;
+  NOTIF_CATEGORY_SECURITY = 2;
+  NOTIF_CATEGORY_TRANSACTIONAL = 3;
+  NOTIF_CATEGORY_WORKFLOW = 4;
+  NOTIF_CATEGORY_INFORMATIONAL = 5;
+}
+
+// NotifDelivery is the system-defined (never user-editable) description of how
+// a chosen cadence is realized for a notification type. It is the client's only
+// reliable signal for the per-type cadence floor: SetTypeCadence rejects OFF
+// for mandatory kinds but still ACCEPTS DAILY/WEEKLY for an immediate-only
+// kind and clamps it at send time, so a UI must read this field rather than
+// infer batchability from `mandatory`.
+enum NotifDelivery {
+  NOTIF_DELIVERY_UNSPECIFIED = 0;
+  // IMMEDIATE_ONLY is sent the instant the event fires and is never batched
+  // (transactional/security/critical, plus the locked first ack demand). A
+  // client must not offer DAILY/WEEKLY for these.
+  NOTIF_DELIVERY_IMMEDIATE_ONLY = 1;
+  // IMMEDIATE_OR_DIGEST sends immediately when the cadence is IMMEDIATE,
+  // otherwise rolls into the matching digest window.
+  NOTIF_DELIVERY_IMMEDIATE_OR_DIGEST = 2;
+  // REMINDER_SCHEDULE is recurring compliance driven by the scheduler, or
+  // folded into the pending-ack digest when a digest cadence is chosen.
+  NOTIF_DELIVERY_REMINDER_SCHEDULE = 3;
+  // DIGEST_PREFERRED defaults to the daily roll-up; IMMEDIATE is allowed but
+  // discouraged.
+  NOTIF_DELIVERY_DIGEST_PREFERRED = 4;
+}
+
+// NotifTypeDef is one row of the notification-type taxonomy: the system's
+// classification of a notification kind, independent of any user's stored
+// choices. ListNotifTypes returns the full set so a preferences UI can render
+// every type a user may override — GetNotificationSettings.overrides only
+// carries the overrides a user has already made, which is empty for a new user.
+message NotifTypeDef {
+  string kind = 1;
+  NotifCategory category = 2;
+  bool mandatory = 3;
+  NotifDelivery delivery = 4;
+}
+
+// CategoryPref is a user's resolved cadence for one category, with the
+// mandatory flag so the UI knows whether to render an OFF option.
+message CategoryPref {
+  NotifCategory category = 1;
+  NotifCadence cadence = 2;
+  bool mandatory = 3;
+}
+
+// TypePref is a user's per-type override (advanced), carrying the type's
+// category + mandatory classification for the UI.
+message TypePref {
+  string kind = 1;
+  NotifCategory category = 2;
+  NotifCadence cadence = 3;
+  bool mandatory = 4;
+  // delivery mirrors the taxonomy's delivery policy for this kind so an
+  // override row is self-describing without a second ListNotifTypes join.
+  NotifDelivery delivery = 5;
+}
+
+// DigestWindow anchors the user's daily/weekly digest delivery time. daily_hour
+// is a local hour [0,23]; weekly_dow is the ISO day-of-week [1,7], 1=Mon.
+message DigestWindow {
+  int32 daily_hour = 1;
+  int32 weekly_dow = 2;
+}
+
+// NotificationSettings is the full per-user notification preference surface:
+// channel master switches, per-category cadences, advanced per-type overrides,
+// and the digest window.
+message NotificationSettings {
+  NotificationPref channels = 1;
+  repeated CategoryPref categories = 2;
+  repeated TypePref overrides = 3;
+  DigestWindow digest = 4;
+}
+
+service NotifPrefService {
+  // Channel master switches.
+  rpc UpsertNotifPref(UpsertNotifPrefRequest) returns (UpsertNotifPrefResponse);
+  rpc GetNotifPref(GetNotifPrefRequest) returns (GetNotifPrefResponse);
+
+  // ListNotifTypes returns the notification-type taxonomy: every kind the
+  // platform sends with its category, mandatory flag, and delivery policy. It
+  // is user-independent reference data (no user_id) — the catalog a preferences
+  // UI needs to render per-type controls before any override exists.
+  rpc ListNotifTypes(ListNotifTypesRequest) returns (ListNotifTypesResponse);
+
+  // Cadence model (category/type/digest) preferences.
+  rpc GetNotificationSettings(GetNotificationSettingsRequest) returns (GetNotificationSettingsResponse);
+  rpc SetCategoryCadence(SetCategoryCadenceRequest) returns (SetCategoryCadenceResponse);
+  rpc SetTypeCadence(SetTypeCadenceRequest) returns (SetTypeCadenceResponse);
+  rpc SetDigestWindow(SetDigestWindowRequest) returns (SetDigestWindowResponse);
+}
+
+message UpsertNotifPrefRequest {
+  NotificationPref pref = 1;
+}
+message UpsertNotifPrefResponse {
+  NotificationPref pref = 1;
+}
+message GetNotifPrefRequest {
+  string user_id = 1;
+}
+message GetNotifPrefResponse {
+  NotificationPref pref = 1;
+}
+
+// ListNotifTypes takes no arguments: the taxonomy is the same for every caller.
+message ListNotifTypesRequest {}
+// types is ordered for display: grouped by category in NotifCategory order,
+// alphabetical by kind within a category.
+message ListNotifTypesResponse {
+  repeated NotifTypeDef types = 1;
+}
+
+message GetNotificationSettingsRequest {
+  string user_id = 1;
+}
+message GetNotificationSettingsResponse {
+  NotificationSettings settings = 1;
+}
+
+message SetCategoryCadenceRequest {
+  string user_id = 1;
+  NotifCategory category = 2;
+  NotifCadence cadence = 3;
+}
+message SetCategoryCadenceResponse {
+  NotificationSettings settings = 1;
+}
+
+message SetTypeCadenceRequest {
+  string user_id = 1;
+  string kind = 2;
+  NotifCadence cadence = 3;
+}
+message SetTypeCadenceResponse {
+  NotificationSettings settings = 1;
+}
+
+message SetDigestWindowRequest {
+  string user_id = 1;
+  int32 daily_hour = 2;
+  int32 weekly_dow = 3;
+}
+message SetDigestWindowResponse {
+  NotificationSettings settings = 1;
+}
