@@ -196,6 +196,32 @@ func TestSenderBreakGlassAlertBypassesSuppression(t *testing.T) {
 	}
 }
 
+// TestSenderBreakGlassReadAlertBypassesSuppression: the alert for a document
+// read under a break-glass grant always sends, like the break-glass login
+// alert.
+func TestSenderBreakGlassReadAlertBypassesSuppression(t *testing.T) {
+	sidecar := newStubSidecar(t, "Break Glass Read", "<p>alert</p>")
+	ft := &fakeTransport{}
+
+	s, err := mail.NewSender(mail.SenderConfig{
+		SMTPHost: "smtp.example.com", SMTPPort: "587", From: "sender@example.org",
+		SidecarURL: sidecar.URL, AppEnv: "prod",
+	},
+		mail.WithTransport(ft),
+		mail.WithSuppressor(fakePrefSource{off: map[string]bool{"owner1": true}}, fakeQuietHours{"owner1": true}),
+	)
+	if err != nil {
+		t.Fatalf("NewSender: %v", err)
+	}
+
+	if err := s.Send(context.Background(), "break-glass-read-alert", "owner1", "owner@example.com", "break-glass-read:ev1:owner@example.com", nil); err != nil {
+		t.Fatalf("Send: expected break-glass-read-alert to bypass suppression, got err: %v", err)
+	}
+	if got := len(ft.sent()); got != 1 {
+		t.Errorf("expected break-glass-read-alert to be delivered despite off pref + quiet hours, got %d sent", got)
+	}
+}
+
 // TestSenderNoPrefUserSends covers the default-on/opt-out rule: a userID the
 // PrefSource has no explicit entry for is treated as enabled.
 func TestSenderNoPrefUserSends(t *testing.T) {

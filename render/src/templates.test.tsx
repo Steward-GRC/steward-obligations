@@ -33,6 +33,15 @@ test("kratos-recovery renders the recovery code and its expiry", async () => {
   assert.ok(html.includes("Reset your Steward password"));
 });
 
+test("break-glass-read-alert names the document, the reader and the act-as admin", async () => {
+  const html = await renderKind("break-glass-read-alert");
+  for (const want of ["POL-HR-000042", "Sensitive Matter", "dave@example.org", "alice@example.org", "Acting as that user"]) {
+    assert.ok(html.includes(want), want);
+  }
+  const plain = await renderKind("break-glass-read-alert", { number: "POL-HR-000042", title: "Sensitive Matter" });
+  assert.equal(plain.includes("Acting as that user"), false);
+});
+
 test("policy-ack-reminder caps a large list and shows an '…and N more' row", async () => {
   const vars = EMAIL_SAMPLE_VARS["policy-ack-reminder"] as { policies: unknown[] };
   assert.equal(vars.policies.length, 7);

@@ -42,7 +42,7 @@ func TestAllClassesCoversEveryClassifiableKind(t *testing.T) {
 // TestAllClassesTaxonomySize pins the taxonomy size so adding or removing a
 // notification type is a deliberate, reviewed change.
 func TestAllClassesTaxonomySize(t *testing.T) {
-	if got, want := len(notifpolicy.AllClasses()), 26; got != want {
+	if got, want := len(notifpolicy.AllClasses()), 27; got != want {
 		t.Errorf("taxonomy size = %d, want %d (update this test deliberately)", got, want)
 	}
 }
@@ -93,5 +93,13 @@ func TestAllClassesMandatoryAndDeliveryAreCoherent(t *testing.T) {
 		if c.Delivery == notifpolicy.DeliveryImmediateOnly && c.Delivery.Batchable() {
 			t.Errorf("kind %q: immediate-only reported batchable", c.Kind)
 		}
+	}
+}
+
+func TestBreakGlassReadAlertIsMandatorySecurity(t *testing.T) {
+	c, ok := notifpolicy.Classify("break-glass-read-alert")
+	if !ok || c.Category != notifpolicy.CategorySecurity || c.Severity != notifpolicy.SeverityCritical ||
+		c.Delivery != notifpolicy.DeliveryImmediateOnly {
+		t.Fatalf("break-glass-read-alert = %+v ok=%v, want critical immediate security", c, ok)
 	}
 }

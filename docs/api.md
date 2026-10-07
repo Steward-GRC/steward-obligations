@@ -54,6 +54,7 @@ delivery is requeued.
 | --- | --- | --- | --- |
 | `obligations.policy.published` | `policy.published` | core | Notifies the audience that hasn't acknowledged the new version. |
 | `obligations.policy.retired` | `policy.retired` | core | Tells the audience the policy is retired; acknowledgements are kept. |
+| `obligations.policy.break_glass_read` | `policy.break_glass_read` | core | A security alert (`break-glass-read-alert`) to the document's owner and every enabled compliance admin, for each read under a break-glass grant. It names the reader and, during act-as, the admin. It can't be opted out of or delayed, and each read is its own alert. A failed owner or compliance-admin lookup is retried. |
 | `obligations.policy.obligation_changed` | `policy.obligation_changed` | core | Re-resolves the audience and removes acknowledgements no longer owed. |
 | `obligations.membership.changed` | `membership.changed` | identity | The same for a user who left a group. |
 | `obligations.account.created` | `account.created` | identity | The welcome email, once per account. |

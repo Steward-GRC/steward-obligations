@@ -6,8 +6,10 @@ package main
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
+	authz "github.com/Steward-GRC/steward-authz"
 	"github.com/rs/zerolog"
 
 	identityv1 "github.com/Steward-GRC/steward-obligations/gen/go/thirdparty/identity/v1"
@@ -32,6 +34,23 @@ func (a *identityGRPCAdapter) ResolveEmail(ctx context.Context, userID string) (
 		return "", err
 	}
 	return resp.GetEmail(), nil
+}
+
+// ListComplianceAdminEmails returns the address of every enabled user holding
+// the global compliance-admin role, implementing
+// consumer.ComplianceAdminResolver. ListAllUsers returns enabled users only.
+func (a *identityGRPCAdapter) ListComplianceAdminEmails(ctx context.Context) ([]string, error) {
+	resp, err := a.client.ListAllUsers(ctx, &identityv1.ListAllUsersRequest{})
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, u := range resp.GetUsers() {
+		if u.GetEmail() != "" && slices.Contains(u.GetRoles(), string(authz.RoleComplianceAdmin)) {
+			out = append(out, u.GetEmail())
+		}
+	}
+	return out, nil
 }
 
 func (a *identityGRPCAdapter) ResolveFCMToken(ctx context.Context, userID string) (string, error) {
