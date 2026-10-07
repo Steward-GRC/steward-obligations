@@ -167,3 +167,18 @@ func TestEmitTransferCarriesNonEmptyActor(t *testing.T) {
 		t.Errorf("Action: got %q, want ack.transferred", events[0].Action)
 	}
 }
+
+// The calling service rides next to the human actor, never in place of it.
+func TestEmitTransferRecordsTheCallingService(t *testing.T) {
+	sink := &fakeAuditSink{}
+	adapter := ack.NewPlatformAuditAdapter(sink)
+
+	in := ack.TransferInput{SourceUserID: "src", TargetUserID: "tgt", ActorUserID: "admin-1", Caller: "identity"}
+	if err := adapter.EmitTransfer(context.Background(), in, ack.TransferResult{Moved: 1}); err != nil {
+		t.Fatalf("EmitTransfer: %v", err)
+	}
+	ev := sink.recorded()[0]
+	if ev.Attributes["caller"] != "identity" || ev.ActorUserID != "admin-1" {
+		t.Fatalf("event=%+v, want actor admin-1 and caller identity", ev)
+	}
+}
