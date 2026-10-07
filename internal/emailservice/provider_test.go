@@ -309,3 +309,73 @@ func TestGet_APIKeyNeverLogged(t *testing.T) {
 		t.Fatalf("api key leaked to logs:\n%s", logged)
 	}
 }
+
+func TestGet_CacheEntryHoldsNoAPIKey(t *testing.T) {
+	const sentinel = "SECRET-KEY-MUST-NOT-REACH-REDIS"
+	kv := newMemKV()
+	p := emailservice.NewProvider(&fakeSecretClient{resp: enabledResp(sentinel)}, kv, 60*time.Second)
+
+	if _, _, err := p.Get(context.Background()); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if kv.setN == 0 {
+		t.Fatalf("no cache write, want the non-secret fields cached")
+	}
+	for k, v := range kv.m {
+		if strings.Contains(string(v), sentinel) || strings.Contains(string(v), "api_key") {
+			t.Fatalf("cache entry %q carries the api key: %s", k, v)
+		}
+		if !strings.Contains(string(v), "mg.example.org") {
+			t.Fatalf("cache entry %q lacks the non-secret fields: %s", k, v)
+		}
+	}
+}
+
+func TestGet_KeyHeldInMemoryForTTLThenRefreshed(t *testing.T) {
+	client := &fakeSecretClient{resp: enabledResp("key-abc")}
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	p := emailservice.NewProvider(client, newMemKV(), 60*time.Second,
+		emailservice.WithClock(func() time.Time { return now }))
+	ctx := context.Background()
+
+	if _, _, err := p.Get(ctx); err != nil {
+		t.Fatalf("Get 1: %v", err)
+	}
+	now = now.Add(59 * time.Second)
+	got, ok, err := p.Get(ctx)
+	if err != nil || !ok || got.APIKey != "key-abc" {
+		t.Fatalf("Get 2 = %+v ok=%v err=%v", got, ok, err)
+	}
+	if client.count() != 1 {
+		t.Fatalf("calls within TTL = %d, want 1", client.count())
+	}
+
+	client.resp = enabledResp("key-rotated")
+	now = now.Add(2 * time.Second)
+	got, ok, err = p.Get(ctx)
+	if err != nil || !ok || got.APIKey != "key-rotated" {
+		t.Fatalf("Get after TTL = %+v ok=%v err=%v, want the refreshed key", got, ok, err)
+	}
+	if client.count() != 2 {
+		t.Fatalf("calls after TTL = %d, want 2 (key refreshed from core)", client.count())
+	}
+}
+
+func TestGet_SharedCacheWithoutKeyInMemory_ReadsCore(t *testing.T) {
+	kv := newMemKV()
+	ctx := context.Background()
+	first := emailservice.NewProvider(&fakeSecretClient{resp: enabledResp("key-abc")}, kv, 60*time.Second)
+	if _, _, err := first.Get(ctx); err != nil {
+		t.Fatalf("first replica Get: %v", err)
+	}
+
+	client := &fakeSecretClient{resp: enabledResp("key-abc")}
+	second := emailservice.NewProvider(client, kv, 60*time.Second)
+	got, ok, err := second.Get(ctx)
+	if err != nil || !ok || got.APIKey != "key-abc" {
+		t.Fatalf("second replica Get = %+v ok=%v err=%v", got, ok, err)
+	}
+	if client.count() != 1 {
+		t.Fatalf("second replica calls = %d, want 1 (the key only comes from core)", client.count())
+	}
+}

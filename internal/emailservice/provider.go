@@ -1,21 +1,27 @@
 // Copyright 2026 The Steward Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package mailgunconf provides the live Mailgun transport configuration to the
-// the obligations service sender. It is the single, internal-only path to the raw
-// Mailgun sending api key: it reads the full config from core over the
-// server-to-server MailgunSecretService.GetMailgunSecret RPC (never via the
-// gateway/GraphQL) and caches it in Redis with a short TTL so the hot send path
-// does not pay a gRPC round-trip per message.
+// Package emailservice provides the live Mailgun transport configuration to
+// the obligations service sender. It is the single, internal-only path to the
+// raw Mailgun sending api key: it reads the full config from core over the
+// server-to-server EmailServiceSecretService.GetEmailServiceSecret RPC (never
+// via the gateway/GraphQL).
+//
+// Caching: the non-secret fields (domain, region, from address, enabled) are
+// cached in Redis with a short TTL. The api key never leaves this process: it
+// is held in memory for the same TTL and refreshed from core when it expires
+// or when the shared Redis entry is gone (so an Invalidate on any replica
+// makes every replica re-read the key).
 //
 // Secret handling: the api key is treated as write-only. It is passed straight
 // through to the transport constructor and is NEVER logged by this
-// package — not on the success path, not on the error path.
+// package, not on the success path, not on the error path.
 package emailservice
 
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"time"
 
 	"github.com/Steward-GRC/steward-obligations/internal/logctx"
@@ -56,47 +62,90 @@ type SecretClient interface {
 	GetEmailServiceSecret(ctx context.Context, in *corev1.GetEmailServiceSecretRequest, opts ...grpc.CallOption) (*corev1.GetEmailServiceSecretResponse, error)
 }
 
-// Provider resolves the current Mailgun config, cache-aside over Redis. A nil
-// KV disables caching (every Get hits core), so the service runs with or
-// without Redis, matching the obligation cache posture.
+// Provider resolves the current Mailgun config: the non-secret fields
+// cache-aside over Redis, the api key in process memory. A nil KV disables
+// caching (every Get hits core), so the service runs with or without Redis,
+// matching the obligation cache posture.
 type Provider struct {
 	client SecretClient
 	kv     cache.KV
 	ttl    time.Duration
+	now    func() time.Time
+
+	mu        sync.Mutex
+	apiKey    string
+	keyExpiry time.Time
+}
+
+// Option configures a Provider.
+type Option func(*Provider)
+
+// WithClock replaces the clock that times the in-memory api key.
+func WithClock(now func() time.Time) Option {
+	return func(p *Provider) { p.now = now }
 }
 
 // NewProvider builds a Provider. A non-positive ttl defaults to DefaultTTL
 // (60s). kv may be nil to disable caching.
-func NewProvider(client SecretClient, kv cache.KV, ttl time.Duration) *Provider {
+func NewProvider(client SecretClient, kv cache.KV, ttl time.Duration, opts ...Option) *Provider {
 	if ttl <= 0 {
 		ttl = DefaultTTL
 	}
-	return &Provider{client: client, kv: kv, ttl: ttl}
+	p := &Provider{client: client, kv: kv, ttl: ttl, now: time.Now}
+	for _, opt := range opts {
+		opt(p)
+	}
+	return p
 }
 
 // Get returns the current Mailgun config for the transport. ok reports whether
 // Mailgun is actually usable (enabled AND carrying an api key and a sending
 // domain); ok=false means "not configured / disabled", and falls back to
-// SMTP. A cache hit is served without a gRPC call; a miss reads core and
-// repopulates the cache. Cache errors degrade to a direct core read — they
-// never fail the call. The api key is never logged.
+// SMTP. A Redis hit with an unexpired in-memory key is served without a gRPC
+// call; otherwise Get reads core, repopulates the Redis entry and refreshes
+// the in-memory key. Cache errors degrade to a direct core read; they never
+// fail the call. The api key is never logged.
 func (p *Provider) Get(ctx context.Context) (MailgunConfig, bool, error) {
-	if cc, hit := p.readCache(ctx); hit {
-		return cc.toConfig(), cc.usable(), nil
+	logger := logctx.From(ctx)
+	if key, fresh := p.memKey(); fresh {
+		if cc, hit := p.readCache(ctx); hit {
+			logger.Trace().Msg("email service config: served from cache")
+			return cc.toConfig(key), cc.usable(key), nil
+		}
 	}
 	resp, err := p.client.GetEmailServiceSecret(ctx, &corev1.GetEmailServiceSecretRequest{})
 	if err != nil {
-		// No fields from resp are logged here — in particular never the key.
-		logger := logctx.From(ctx)
-		logger.Error().Err(err).Msg("mailgun config: GetMailgunSecret failed")
+		// No fields from resp are logged here, in particular never the key.
+		logger.Error().Err(err).Msg("email service config: GetEmailServiceSecret failed")
 		return MailgunConfig{}, false, err
 	}
-	cc := fromProto(resp.GetConfig())
+	cfg := resp.GetConfig()
+	key := cfg.GetApiKey()
+	cc := fromProto(cfg)
+	p.setMemKey(key)
 	p.writeCache(ctx, cc)
-	return cc.toConfig(), cc.usable(), nil
+	logger.Debug().Bool("enabled", cc.Enabled).Msg("email service config: refreshed from core")
+	return cc.toConfig(key), cc.usable(key), nil
 }
 
-// Invalidate drops the cached config so the next Get re-reads it from core.
+func (p *Provider) memKey() (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.keyExpiry.IsZero() || !p.now().Before(p.keyExpiry) {
+		return "", false
+	}
+	return p.apiKey, true
+}
+
+func (p *Provider) setMemKey(key string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.apiKey = key
+	p.keyExpiry = p.now().Add(p.ttl)
+}
+
+// Invalidate drops the cached config and the in-memory key so the next Get
+// re-reads them from core.
 //
 // It is exposed for near-instant propagation of admin config changes. Today
 // core's SetMailgunConfig emits "mailgun_config.updated" only on the AUDIT tier
@@ -106,6 +155,9 @@ func (p *Provider) Get(ctx context.Context) (MailgunConfig, bool, error) {
 // "mailgun_config.updated" to the jobs exchange, add a small consumer here that
 // calls Invalidate for sub-second propagation.
 func (p *Provider) Invalidate(ctx context.Context) error {
+	p.mu.Lock()
+	p.apiKey, p.keyExpiry = "", time.Time{}
+	p.mu.Unlock()
 	if p.kv == nil {
 		return nil
 	}
@@ -136,26 +188,16 @@ func (p *Provider) writeCache(ctx context.Context, cc cachedConfig) {
 	if p.kv == nil {
 		return
 	}
-	b, err := json.Marshal(cc) // #nosec G117 -- the key is cached for the TTL by the decision on cachedConfig below
+	b, err := json.Marshal(cc)
 	if err != nil {
 		return
 	}
 	_ = p.kv.SetBytes(ctx, cacheKey, b, p.ttl)
 }
 
-// cachedConfig is the JSON shape persisted in Redis. It carries the raw api key.
-//
-// SECRET-CACHING DECISION (flag for review): the api key is cached in Redis
-// alongside the non-secret fields under the 60s TTL. The key already lives at
-// rest in core's Postgres; a short-lived cache of it in the in-cluster Redis is
-// consistent with how the other in-cluster secrets are handled and keeps the
-// send path a single read. The alternative — caching only the non-secret fields
-// and holding the key in a short in-process cache — was considered but rejected
-// as extra machinery for no additional trust boundary (the same in-cluster
-// Redis already holds other sensitive material). Revisit if Redis gains an
-// untrusted tenant.
+// cachedConfig is the JSON shape persisted in Redis. It carries only the
+// non-secret fields; the api key stays in process memory (see Provider).
 type cachedConfig struct {
-	APIKey      string `json:"api_key"`
 	Domain      string `json:"domain"`
 	Region      string `json:"region"`
 	FromAddress string `json:"from_address"`
@@ -169,7 +211,6 @@ func fromProto(c *corev1.EmailServiceConfig) cachedConfig {
 		return cachedConfig{}
 	}
 	return cachedConfig{
-		APIKey:      c.GetApiKey(),
 		Domain:      c.GetDomain(),
 		Region:      c.GetRegion(),
 		FromAddress: c.GetFromAddress(),
@@ -177,9 +218,9 @@ func fromProto(c *corev1.EmailServiceConfig) cachedConfig {
 	}
 }
 
-func (c cachedConfig) toConfig() MailgunConfig {
+func (c cachedConfig) toConfig(apiKey string) MailgunConfig {
 	return MailgunConfig{
-		APIKey:      c.APIKey,
+		APIKey:      apiKey,
 		Domain:      c.Domain,
 		Region:      c.Region,
 		FromAddress: c.FromAddress,
@@ -189,6 +230,6 @@ func (c cachedConfig) toConfig() MailgunConfig {
 // usable reports whether the config can actually send: it must be enabled and
 // carry both an api key and a sending domain. Anything else is "not configured"
 // and drives the SMTP fallback (Get returns ok=false).
-func (c cachedConfig) usable() bool {
-	return c.Enabled && c.APIKey != "" && c.Domain != ""
+func (c cachedConfig) usable(apiKey string) bool {
+	return c.Enabled && apiKey != "" && c.Domain != ""
 }
