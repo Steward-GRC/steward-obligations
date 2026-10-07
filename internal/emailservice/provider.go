@@ -136,7 +136,7 @@ func (p *Provider) writeCache(ctx context.Context, cc cachedConfig) {
 	if p.kv == nil {
 		return
 	}
-	b, err := json.Marshal(cc)
+	b, err := json.Marshal(cc) // #nosec G117 -- the key is cached for the TTL by the decision on cachedConfig below
 	if err != nil {
 		return
 	}
