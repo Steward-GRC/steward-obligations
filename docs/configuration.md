@@ -17,7 +17,7 @@ problem listed.
 | `LOG_LEVEL`, `LOG_FORMAT` | go-log's | `trace` and `console` locally; clusters log JSON. |
 | `GRPC_TLS_CERT_FILE`, `GRPC_TLS_KEY_FILE`, `GRPC_TLS_CLIENT_CA_FILE` | empty | mTLS, set together. |
 | `CORE_GRPC_ADDR`, `IDENTITY_GRPC_ADDR` | required | The services called. |
-| `REDIS_ADDR`, `REDIS_PASSWORD` | empty | Valkey for the obligating-set and email-service caches; empty turns them off. |
+| `REDIS_ADDR`, `REDIS_PASSWORD` | empty | Valkey for the obligating-set and email-service caches; empty turns them off. The email-service cache holds only the non-secret fields (domain, region, from address, enabled); the provider API key is never written to Valkey. Each process keeps the key in memory for 60 seconds and then re-reads it from core. |
 | `OBLIGATING_CACHE_TTL_SEC` | `60` | How long the obligating-policy set is cached. |
 
 ## Service-to-service authentication
