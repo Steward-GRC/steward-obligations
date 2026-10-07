@@ -313,6 +313,8 @@ func run(ctx context.Context, lg log.Logger, logger zerolog.Logger) error {
 		{"obligations.sso.lifecycle", "sso.lifecycle", "obligations-sso-lifecycle",
 			consumer.NewSSOLifecycleConsumer(mailSender, identityClient, staticSiteAdminResolver(cfg.SiteAdminEmails)).
 				WithWelcomeGate(welcomeGate).WithLoginURL(cfg.PortalAccountURL)},
+		{"obligations.policy.break_glass_read", "policy.break_glass_read", "obligations-break-glass-read",
+			consumer.NewBreakGlassReadConsumer(mailSender, identityClient, identityClient)},
 		{"obligations.account.created", "account.created", "obligations-account-created",
 			consumer.NewAccountCreatedConsumer(identityClient, mailSender, welcomeGate, cfg.PortalAccountURL)},
 		{"obligations.auth.recovery", "auth.recovery", "obligations-auth-recovery",

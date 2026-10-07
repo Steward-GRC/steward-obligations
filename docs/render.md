@@ -57,6 +57,7 @@ with an `Allow` header.
 | `access-granted` | Your access has been granted |
 | `sso-account-welcome` | Your Steward account is ready |
 | `break-glass-alert` | Security alert: break-glass sign-in used |
+| `break-glass-read-alert` | Security alert: a document was read under break-glass |
 | `mfa-setup` | Set up multi-factor authentication |
 | `digest` | Your Steward digest |
 

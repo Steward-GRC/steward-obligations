@@ -39,6 +39,7 @@ test("keeps every kind name and default subject the sender relies on", () => {
     "ack-required": "Acknowledgement required",
     "assigned-as-owner": "You've been assigned as category owner",
     "break-glass-alert": "Security alert: break-glass sign-in used",
+    "break-glass-read-alert": "Security alert: a document was read under break-glass",
     digest: "Your Steward digest",
     "domain-verification-instructions": "Verify your domain to enable SSO",
     "domain-verified": "Your domain has been verified",

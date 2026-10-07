@@ -31,6 +31,12 @@ const kindSSOAccountWelcome = "sso-account-welcome"
 // being used.
 const kindBreakGlassAlert = "break-glass-alert"
 
+// kindBreakGlassReadAlert is break-glass-read-alert (internal/consumer's
+// break-glass read consumer): the owner and the compliance admins are told
+// each time a document is read under a break-glass grant. Like the login
+// alert, it can't be opted out of or delayed.
+const kindBreakGlassReadAlert = "break-glass-read-alert"
+
 // kindKratosRecovery is kratos-recovery (internal/consumer's auth-recovery
 // consumer): the password-recovery code a user explicitly requested. It
 // always sends -- a recipient who asked to reset their password must receive
@@ -44,10 +50,11 @@ const kindKratosRecovery = "kratos-recovery"
 // Membership here means "security/transactional, not a discretionary
 // notification" -- see each kind's own doc comment for why.
 var bypassSuppressionKinds = map[string]struct{}{
-	kindWelcomeAccount:    {},
-	kindSSOAccountWelcome: {},
-	kindBreakGlassAlert:   {},
-	kindKratosRecovery:    {},
+	kindWelcomeAccount:      {},
+	kindSSOAccountWelcome:   {},
+	kindBreakGlassAlert:     {},
+	kindBreakGlassReadAlert: {},
+	kindKratosRecovery:      {},
 }
 
 // PrefSource reports whether userID currently has the email channel enabled.

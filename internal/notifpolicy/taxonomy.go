@@ -158,11 +158,12 @@ var taxonomy = map[string]Class{
 	"domain-verified":                  {Kind: "domain-verified", Category: CategoryTransactional, Severity: SeverityNormal, Delivery: DeliveryImmediateOnly},
 
 	// --- Security (mandatory; bypass quiet hours) ---
-	"otp":               {Kind: "otp", Category: CategorySecurity, Severity: SeverityCritical, Delivery: DeliveryImmediateOnly},
-	"kratos-recovery":   {Kind: "kratos-recovery", Category: CategorySecurity, Severity: SeverityCritical, Delivery: DeliveryImmediateOnly},
-	"break-glass-alert": {Kind: "break-glass-alert", Category: CategorySecurity, Severity: SeverityCritical, Delivery: DeliveryImmediateOnly},
-	"mfa-setup":         {Kind: "mfa-setup", Category: CategorySecurity, Severity: SeverityHigh, Delivery: DeliveryImmediateOnly},
-	"sp-cert-rotated":   {Kind: "sp-cert-rotated", Category: CategorySecurity, Severity: SeverityHigh, Delivery: DeliveryImmediateOnly},
+	"otp":                    {Kind: "otp", Category: CategorySecurity, Severity: SeverityCritical, Delivery: DeliveryImmediateOnly},
+	"kratos-recovery":        {Kind: "kratos-recovery", Category: CategorySecurity, Severity: SeverityCritical, Delivery: DeliveryImmediateOnly},
+	"break-glass-alert":      {Kind: "break-glass-alert", Category: CategorySecurity, Severity: SeverityCritical, Delivery: DeliveryImmediateOnly},
+	"break-glass-read-alert": {Kind: "break-glass-read-alert", Category: CategorySecurity, Severity: SeverityCritical, Delivery: DeliveryImmediateOnly},
+	"mfa-setup":              {Kind: "mfa-setup", Category: CategorySecurity, Severity: SeverityHigh, Delivery: DeliveryImmediateOnly},
+	"sp-cert-rotated":        {Kind: "sp-cert-rotated", Category: CategorySecurity, Severity: SeverityHigh, Delivery: DeliveryImmediateOnly},
 }
 
 // Classify returns the Class for a kind and whether it is known. Unknown kinds

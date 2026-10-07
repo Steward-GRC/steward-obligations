@@ -145,3 +145,35 @@ func TestAckAuditEmitter_OrdinaryAckNamesTheUser(t *testing.T) {
 		t.Error("impersonated_user_id present on a non-impersonated ack")
 	}
 }
+
+type fakeIdentityUsers struct {
+	identityv1.IdentityReadServiceClient
+	users []*identityv1.User
+	err   error
+}
+
+func (f fakeIdentityUsers) ListAllUsers(_ context.Context, _ *identityv1.ListAllUsersRequest, _ ...grpc.CallOption) (*identityv1.ListAllUsersResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &identityv1.ListAllUsersResponse{Users: f.users}, nil
+}
+
+func TestListComplianceAdminEmailsKeepsOnlyComplianceAdmins(t *testing.T) {
+	a := &identityGRPCAdapter{client: fakeIdentityUsers{users: []*identityv1.User{
+		{Id: "u1", Email: "grace@example.org", Roles: []string{"compliance-admin"}},
+		{Id: "u2", Email: "alice@example.org", Roles: []string{"site-admin"}},
+		{Id: "u3", Email: "", Roles: []string{"compliance-admin"}},
+		{Id: "u4", Email: "erin@example.org"},
+	}}}
+	got, err := a.ListComplianceAdminEmails(context.Background())
+	if err != nil {
+		t.Fatalf("ListComplianceAdminEmails: %v", err)
+	}
+	if len(got) != 1 || got[0] != "grace@example.org" {
+		t.Fatalf("got %v, want only the compliance admin with an address", got)
+	}
+	if _, err := (&identityGRPCAdapter{client: fakeIdentityUsers{err: errors.New("down")}}).ListComplianceAdminEmails(context.Background()); err == nil {
+		t.Fatal("an identity failure must be returned")
+	}
+}

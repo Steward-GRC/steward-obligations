@@ -7,6 +7,7 @@ import { AccessGranted, sampleVars as accessGrantedSampleVars } from "./accessGr
 import { AckRequired, sampleVars as ackRequiredSampleVars } from "./ackRequired.js";
 import { AssignedAsOwner, sampleVars as assignedAsOwnerSampleVars } from "./assignedAsOwner.js";
 import { BreakGlassAlert, sampleVars as breakGlassAlertSampleVars } from "./breakGlassAlert.js";
+import { BreakGlassReadAlert, sampleVars as breakGlassReadAlertSampleVars } from "./breakGlassReadAlert.js";
 import { Digest, sampleVars as digestSampleVars } from "./digest.js";
 import {
   DomainVerificationInstructions,
@@ -65,6 +66,7 @@ export const EMAIL_KINDS = [
   "access-granted",
   "sso-account-welcome",
   "break-glass-alert",
+  "break-glass-read-alert",
   "mfa-setup",
   "digest",
 ] as const;
@@ -79,6 +81,7 @@ export const EMAIL_COMPONENTS: Record<EmailKind, ComponentType<any>> = {
   "ack-required": AckRequired,
   "assigned-as-owner": AssignedAsOwner,
   "break-glass-alert": BreakGlassAlert,
+  "break-glass-read-alert": BreakGlassReadAlert,
   digest: Digest,
   "domain-verification-instructions": DomainVerificationInstructions,
   "domain-verified": DomainVerified,
@@ -107,6 +110,7 @@ export const EMAIL_SUBJECTS: Record<EmailKind, (productName: string) => string> 
   "ack-required": () => "Acknowledgement required",
   "assigned-as-owner": () => "You've been assigned as category owner",
   "break-glass-alert": () => "Security alert: break-glass sign-in used",
+  "break-glass-read-alert": () => "Security alert: a document was read under break-glass",
   digest: (product) => `Your ${product} digest`,
   "domain-verification-instructions": () => "Verify your domain to enable SSO",
   "domain-verified": () => "Your domain has been verified",
@@ -140,6 +144,7 @@ export const EMAIL_SAMPLE_VARS: Record<EmailKind, Record<string, unknown>> = {
   "ack-required": asVars(ackRequiredSampleVars),
   "assigned-as-owner": asVars(assignedAsOwnerSampleVars),
   "break-glass-alert": asVars(breakGlassAlertSampleVars),
+  "break-glass-read-alert": asVars(breakGlassReadAlertSampleVars),
   digest: asVars(digestSampleVars),
   "domain-verification-instructions": asVars(domainVerificationInstructionsSampleVars),
   "domain-verified": asVars(domainVerifiedSampleVars),
