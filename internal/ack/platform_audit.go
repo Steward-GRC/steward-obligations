@@ -55,21 +55,25 @@ func (a *PlatformAuditAdapter) EmitAck(ctx context.Context, r RecordResult) erro
 
 // EmitTransfer publishes a single audit-tier event recording an account-merge
 // ack transfer. The subject is the target user ("user:<target>"); the actor is
-// the operator/system that performed the merge and the counts plus the merge
-// operation id are carried as attributes so audit consumers can correlate the
-// transfer back to the originating merge.
+// the admin who ran the merge, and the counts, the merge operation id and the
+// calling service are carried as attributes so audit consumers can correlate
+// the transfer back to the originating merge.
 func (a *PlatformAuditAdapter) EmitTransfer(ctx context.Context, in TransferInput, res TransferResult) error {
+	attrs := map[string]string{
+		"source_user_id":     in.SourceUserID,
+		"target_user_id":     in.TargetUserID,
+		"moved":              strconv.Itoa(res.Moved),
+		"deduped":            strconv.Itoa(res.Deduped),
+		"merge_operation_id": in.MergeOperationID,
+	}
+	if in.Caller != "" {
+		attrs["caller"] = in.Caller
+	}
 	return a.emitter.Emit(ctx, audit.Event{
 		Tier:        audit.TierAudit,
 		Action:      "ack.transferred",
 		ActorUserID: in.ActorUserID,
 		Subject:     "user:" + in.TargetUserID,
-		Attributes: map[string]string{
-			"source_user_id":     in.SourceUserID,
-			"target_user_id":     in.TargetUserID,
-			"moved":              strconv.Itoa(res.Moved),
-			"deduped":            strconv.Itoa(res.Deduped),
-			"merge_operation_id": in.MergeOperationID,
-		},
+		Attributes:  attrs,
 	})
 }

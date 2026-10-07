@@ -6,7 +6,7 @@ The API is `steward.obligations.v1`, in
 
 | Service | Holds |
 | --- | --- |
-| `AckService` | `RecordAck` and `RecordView` for the forwarded actor (the request names only the version), `GetAckStatus`, and `TransferAcknowledgments` for an account merge: deduplicated, idempotent, with a dry run for the preview. A real transfer must name `actor_user_id`. |
+| `AckService` | `RecordAck` and `RecordView` for the forwarded actor (the request names only the version), `GetAckStatus`, and `TransferAcknowledgments` for an account merge: deduplicated, idempotent, with a dry run for the preview. A real transfer must name `actor_user_id`, the person who authorised it: there is no system actor, because a service can't authorise moving an attestation. |
 | `ObligationService` | `GetMyObligations`, `MyAckSummary`, `GetObligatedAudienceCount`. |
 | `ReportingService` | `GetCompletionReport`, `GetAckRoster`, `GetAckActivity`, `ExportAcks` (CSV or JSON). |
 | `NotifPrefService` | Channel switches, the notification-type catalogue, category and type cadences (off is refused for mandatory categories), and the digest window. |
@@ -70,6 +70,8 @@ Every audit event is a `steward.audit.v1.AuditEvent` (steward-audit's contract),
 content type `application/protobuf; proto=steward.audit.v1.AuditEvent`, routing key `audit.audit`.
 An acknowledgement and its `ack.recorded` event commit together, so neither exists without the
 other. Other actions: `ack.transferred`, the publish audience summary, and each email sent.
+`ack.transferred` names the admin as its actor and carries the source and target users, the counts,
+the merge operation id and `caller`, the service the workload-auth check verified (`identity`).
 
 ## Calling other services
 

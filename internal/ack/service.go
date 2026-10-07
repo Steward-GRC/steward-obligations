@@ -57,6 +57,9 @@ type TransferInput struct {
 	ActorUserID      string
 	DryRun           bool
 	MergeOperationID string
+	// Caller is the service the workload-auth check verified (identity for
+	// an account merge), recorded next to ActorUserID, never instead of it.
+	Caller string
 }
 
 // TransferResult is the outcome of a Transfer. Moved counts re-pointed

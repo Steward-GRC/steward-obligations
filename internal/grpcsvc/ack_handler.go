@@ -24,6 +24,7 @@ import (
 	"github.com/Steward-GRC/steward-obligations/internal/ack"
 	"github.com/Steward-GRC/steward-obligations/internal/errcodes"
 	"github.com/Steward-GRC/steward-obligations/internal/store"
+	"github.com/Steward-GRC/steward-obligations/internal/workloadauth"
 )
 
 // AckServiceBackend is the narrow interface the handler depends on; the
@@ -146,9 +147,17 @@ func (h *AckHandler) TransferAcknowledgments(ctx context.Context, req *obligatio
 	// ack.Service.Transfer), so there is no unattributed event to prevent, and
 	// requiring an actor would break PreviewAccountMerge, which resolves an
 	// admin but has no attestation to attribute.
+	//
+	// There is deliberately no system actor: the verified calling service is
+	// recorded as the event's caller, but a service can't authorise moving an
+	// attestation, so it never stands in for the person who did.
 	actor := strings.TrimSpace(req.GetActorUserId())
 	if actor == "" && !req.GetDryRun() {
 		return nil, errcodes.Error(ctx, errcodes.AckTransferActorRequired())
+	}
+	var caller string
+	if g, ok := workloadauth.GrantFromContext(ctx); ok {
+		caller = g.Caller.Name
 	}
 
 	res, err := h.svc.Transfer(ctx, ack.TransferInput{
@@ -157,6 +166,7 @@ func (h *AckHandler) TransferAcknowledgments(ctx context.Context, req *obligatio
 		ActorUserID:      actor,
 		DryRun:           req.GetDryRun(),
 		MergeOperationID: req.GetMergeOperationId(),
+		Caller:           caller,
 	})
 	if err != nil {
 		return nil, storeUnavailable(ctx, "transfer_acknowledgments", err)
