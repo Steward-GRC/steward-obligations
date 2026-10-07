@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -34,7 +35,6 @@ import (
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	obligationsv1 "github.com/Steward-GRC/steward-obligations/gen/go/steward/obligations/v1"
 	corev1 "github.com/Steward-GRC/steward-obligations/gen/go/thirdparty/core/v1"
@@ -57,12 +57,17 @@ import (
 	"github.com/Steward-GRC/steward-obligations/internal/scheduler"
 	"github.com/Steward-GRC/steward-obligations/internal/server"
 	"github.com/Steward-GRC/steward-obligations/internal/store"
+	"github.com/Steward-GRC/steward-obligations/internal/workloadauth"
 )
 
 const serviceName = "obligations"
 
 // auditOutboxTable holds the audit events waiting for the relay.
 const auditOutboxTable = "audit_outbox"
+
+// jwksRecheck is how long a good JWKS fetch keeps readiness up before the
+// next probe fetches again.
+const jwksRecheck = time.Minute
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -140,12 +145,15 @@ func run(ctx context.Context, lg log.Logger, logger zerolog.Logger) error {
 	notifSettings := notifprefs.NewService(notifPrefStore, notifCategoryStore, notifOverrideStore, notifDigestStore)
 	policyViewStore := store.NewPolicyViewStore(db)
 
-	// Service mTLS for outbound calls comes with the service identities; the
-	// cluster network is trusted until then.
-	dial := func(addr string) (*grpc.ClientConn, error) {
-		return grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithStatsHandler(gootel.GRPCClientStatsHandler()))
+	// Every call to core and identity carries obligations' workload token.
+	dialOpts, err := server.DialOptions(cfg.TokenFile)
+	if err != nil {
+		return fmt.Errorf("workload token: %w", err)
 	}
+	if cfg.TokenFile == "" {
+		lg.Warn(workloadauth.EnvTokenFile + " is not used: calls to core and identity carry no workload token (WORKLOAD_AUTH=disabled)")
+	}
+	dial := func(addr string) (*grpc.ClientConn, error) { return grpc.NewClient(addr, dialOpts...) }
 	coreConn, err := dial(cfg.CoreGRPCAddr)
 	if err != nil {
 		return fmt.Errorf("dial core: %w", err)
@@ -349,8 +357,25 @@ func run(ctx context.Context, lg log.Logger, logger zerolog.Logger) error {
 
 	ackSvc := ackpkg.NewService(ackStoreAdapter, ackAuditEmitter(auditEmitter)).
 		WithTx(func(ctx context.Context, fn func(context.Context) error) error { return store.InTx(ctx, db, fn) })
-	if len(cfg.TrustedCallers) == 0 {
-		lg.Warn("OBLIGATIONS_TRUSTED_CALLERS is not set: forwarded actors are ignored, so acknowledgements are refused")
+	var auth *server.Auth
+	if cfg.WorkloadAuthEnabled {
+		v, err := workloadauth.NewVerifier(cfg.WorkloadAuth, lg)
+		if err != nil {
+			return fmt.Errorf("workload auth: %w", err)
+		}
+		go v.Run(ctx)
+		deps.JWKS = readiness.RecheckEvery(v.Refresh, jwksRecheck, time.Now)
+		auth = &server.Auth{Verifier: v, Policy: grpcsvc.CallerPolicy(), Options: []workloadauth.Option{
+			workloadauth.WithDenyHook(grpcsvc.AuditDenial(auditEmitter, lg)),
+		}}
+		lg.Info("service-to-service authentication on",
+			log.F("issuer", cfg.WorkloadAuth.Issuer), log.F("audience", cfg.WorkloadAuth.Audience),
+			log.F("jwks_override", cfg.WorkloadAuth.JWKSURL != ""), log.F("ca_file", cfg.WorkloadAuth.CAFile != ""),
+			log.F("bearer_file", cfg.WorkloadAuth.BearerFile != ""),
+			log.F("allowed_serviceaccounts", strings.Join(cfg.WorkloadAuth.AllowedServiceAccounts, ",")))
+	} else {
+		deps.WorkloadAuthDisabled = true
+		go workloadauth.WarnDisabled(ctx, lg, workloadauth.DisabledWarnInterval)
 	}
 
 	checker, err := readiness.New(deps, health.WithTTL(5*time.Second), health.WithTimeout(2*time.Second), health.WithLogger(lg))
@@ -376,7 +401,7 @@ func run(ctx context.Context, lg log.Logger, logger zerolog.Logger) error {
 	}()
 	opts := server.Options{
 		CertFile: cfg.TLS.CertFile, KeyFile: cfg.TLS.KeyFile, ClientCAFile: cfg.TLS.ClientCAFile,
-		TrustedCallers: cfg.TrustedCallers, Checker: checker,
+		Auth: auth, Checker: checker,
 	}
 	err = server.Serve(ctx, lis, lg, opts, func(s *grpc.Server) {
 		obligationsv1.RegisterAckServiceServer(s, grpcsvc.NewAckHandler(ackSvc, policyViewStore))

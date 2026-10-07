@@ -16,10 +16,33 @@ problem listed.
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | Traces and metrics. |
 | `LOG_LEVEL`, `LOG_FORMAT` | go-log's | `trace` and `console` locally; clusters log JSON. |
 | `GRPC_TLS_CERT_FILE`, `GRPC_TLS_KEY_FILE`, `GRPC_TLS_CLIENT_CA_FILE` | empty | mTLS, set together. |
-| `OBLIGATIONS_TRUSTED_CALLERS` | empty | Comma-separated SPIFFE IDs whose forwarded actor is believed (needs mTLS). Without it acknowledgements are refused. |
 | `CORE_GRPC_ADDR`, `IDENTITY_GRPC_ADDR` | required | The services called. |
 | `REDIS_ADDR`, `REDIS_PASSWORD` | empty | Valkey for the obligating-set and email-service caches; empty turns them off. |
 | `OBLIGATING_CACHE_TTL_SEC` | `60` | How long the obligating-policy set is cached. |
+
+## Service-to-service authentication
+
+Every gRPC call to obligations carries the caller's projected service-account token (audience
+`steward`) as `authorization: Bearer <token>`. Obligations verifies it against the cluster issuer's
+key set, maps `<namespace>/steward-<name>` to the caller name and checks the per-method allow-list
+in code (`internal/grpcsvc/callers.go`). The gateway is the only caller: it may call every method
+and pass the signed-in user's actor, except `TransferAcknowledgments`, which nobody calls yet and
+is refused. Health and reflection need no token. `internal/workloadauth` is a byte-identical copy
+of steward-core's; `scripts/workloadauth-check.sh` compares it with core at `STEWARD_CORE_REF` in
+`proto-refs.env`.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `WORKLOAD_AUTH` | unset (on) | `disabled` is the only accepted value, for local runs only: no caller is checked, no forwarded actor is believed, and readiness reports `workloadauth` degraded. It can't be combined with `WORKLOAD_OIDC_*`. |
+| `WORKLOAD_OIDC_ISSUER` | required unless disabled | The cluster's service-account issuer (https), matched exactly against the token's `iss`. |
+| `WORKLOAD_OIDC_JWKS_URL` | discovery | Overrides `<issuer>/.well-known/openid-configuration`. |
+| `WORKLOAD_OIDC_CA_FILE` | system roots | PEM bundle trusted for the discovery and JWKS fetch. |
+| `WORKLOAD_OIDC_BEARER_FILE` | none | A token sent on the discovery and JWKS fetch, re-read on every fetch. |
+| `WORKLOAD_AUDIENCE` | `steward` | The audience a caller's token must carry. |
+| `WORKLOAD_ALLOWED_SERVICEACCOUNTS` | required unless disabled | Comma list of `<namespace>/<serviceaccount>` that may call at all, for example `steward/steward-gateway`. |
+| `WORKLOAD_TOKEN_FILE` | `/var/run/secrets/steward/token` when on | Obligations' own projected token, sent on every call to core and identity and re-read each time. An unreadable file stops the boot. Unused while `WORKLOAD_AUTH=disabled`. |
+
+A missing setting, a plain-http issuer or a malformed allow-list entry stops the boot.
 
 ## Email
 

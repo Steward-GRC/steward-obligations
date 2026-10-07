@@ -16,6 +16,8 @@ is reused for 5 seconds.
 | --- | --- | --- |
 | `postgres` | yes | Not ready: nothing can be read or written. |
 | `rabbitmq` | yes | Not ready: no event is consumed and no audit event is relayed. |
+| `jwks` | yes, while service-to-service authentication is on | Not ready, and every call is refused `Unavailable`: no caller can be verified. A good fetch is kept for a minute; a failure is retried on the next probe. |
+| `workloadauth` | no, reported only with `WORKLOAD_AUTH=disabled` | Degraded, still ready: authentication is off (local runs only). |
 | `core`, `identity` | no | Degraded, still ready: obligation lookups and sends fail; acknowledgements, preferences and reports work. |
 | `render` | no | Degraded, still ready: email is held in the mail outbox and sent once the sidecar is back. |
 | `valkey` | no, reported when `REDIS_ADDR` is set | Degraded, still ready: reads go to core. If Valkey was unreachable at start-up, the caches stay off until a restart. |
@@ -33,7 +35,12 @@ is reused for 5 seconds.
 
 | Symptom | Look at |
 | --- | --- |
-| `ACK_AUTH_REQUIRED` for every acknowledgement | The gateway isn't a trusted caller: check mTLS and `OBLIGATIONS_TRUSTED_CALLERS`. |
+| `ACK_AUTH_REQUIRED` for every acknowledgement | No verified on-behalf caller: the call came with `WORKLOAD_AUTH=disabled`, or not from the gateway. |
+| `Unauthenticated: no workload token` | The caller sent no `authorization` metadata: check its `WORKLOAD_TOKEN_FILE` and the projected token mount (audience `steward`). |
+| `Unauthenticated: workload token rejected` | Wrong audience or issuer, an expired token, or a service account missing from `WORKLOAD_ALLOWED_SERVICEACCOUNTS`. |
+| `PermissionDenied: caller not allowed on this method` | A verified service the method's policy doesn't list (`internal/grpcsvc/callers.go`). |
+| `Unavailable: workload verifier unavailable`, and `jwks` down in `/readyz` | No issuer key set has loaded: check `WORKLOAD_OIDC_ISSUER`, the CA file, and that `WORKLOAD_OIDC_BEARER_FILE` holds a token the API server accepts for the JWKS (a 401 there drains the pod). |
+| Calls to core or identity fail with `read WORKLOAD_TOKEN_FILE` | Obligations' own token mount went away. |
 | `Code 7001: Internal Error` | A store call failed; the log line with the same trace id names the `op`. |
 | Audit events stop arriving | `SELECT status, count(*) FROM audit_outbox GROUP BY status`: `pending` rows mean the relay can't publish (check RabbitMQ), `dead` rows have their last error kept. |
 | Email isn't going out | `mail_outbox` rows with `status = 'pending'` are held: no working transport, the email service over its limit, or the render sidecar down. |

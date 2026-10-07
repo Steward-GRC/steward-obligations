@@ -10,6 +10,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/Steward-GRC/steward-obligations/internal/workloadauth"
 )
 
 // TLS is the server certificate and the CA client certificates must chain
@@ -33,9 +35,14 @@ type Config struct {
 	ProbePort    string
 	OTLPEndpoint string
 	TLS          TLS
-	// TrustedCallers are the SPIFFE IDs whose forwarded actor is believed.
-	// They need TLS with client certificates.
-	TrustedCallers []string
+	// WorkloadAuth verifies the callers' workload tokens. It is set when
+	// WorkloadAuthEnabled; WORKLOAD_AUTH=disabled is the only way to turn it
+	// off.
+	WorkloadAuth        workloadauth.Config
+	WorkloadAuthEnabled bool
+	// TokenFile is obligations' own projected token, sent on every call to
+	// core and identity. Empty (WORKLOAD_AUTH=disabled) sends none.
+	TokenFile string
 
 	// CoreGRPCAddr and IdentityAddr are the services obligations calls.
 	CoreGRPCAddr string
@@ -123,7 +130,6 @@ func Load() (Config, error) {
 			CertFile: os.Getenv("GRPC_TLS_CERT_FILE"), KeyFile: os.Getenv("GRPC_TLS_KEY_FILE"),
 			ClientCAFile: os.Getenv("GRPC_TLS_CLIENT_CA_FILE"),
 		},
-		TrustedCallers: splitCSV(os.Getenv("OBLIGATIONS_TRUSTED_CALLERS")),
 
 		CoreGRPCAddr: os.Getenv("CORE_GRPC_ADDR"),
 		IdentityAddr: os.Getenv("IDENTITY_GRPC_ADDR"),
@@ -181,6 +187,13 @@ func Load() (Config, error) {
 	c.MigrateDSN = getOr("MIGRATE_DSN", c.DatabaseDSN)
 
 	var errs []error
+	var err error
+	if c.WorkloadAuth, c.WorkloadAuthEnabled, err = workloadauth.ServerConfigFromEnv(os.Getenv); err != nil {
+		errs = append(errs, err)
+	}
+	if c.WorkloadAuthEnabled {
+		c.TokenFile = getOr(workloadauth.EnvTokenFile, workloadauth.DefaultTokenFile)
+	}
 	if c.DatabaseDSN == "" {
 		errs = append(errs, errors.New("DATABASE_DSN is required"))
 	}
@@ -193,9 +206,6 @@ func Load() (Config, error) {
 	tlsSet := c.TLS.CertFile != "" || c.TLS.KeyFile != "" || c.TLS.ClientCAFile != ""
 	if tlsSet && (c.TLS.CertFile == "" || c.TLS.KeyFile == "" || c.TLS.ClientCAFile == "") {
 		errs = append(errs, errors.New("GRPC_TLS_CERT_FILE, GRPC_TLS_KEY_FILE and GRPC_TLS_CLIENT_CA_FILE are set together"))
-	}
-	if len(c.TrustedCallers) > 0 && !tlsSet {
-		errs = append(errs, errors.New("OBLIGATIONS_TRUSTED_CALLERS needs GRPC_TLS_* with client certificates"))
 	}
 	return c, errors.Join(errs...)
 }

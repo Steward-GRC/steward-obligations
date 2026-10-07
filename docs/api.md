@@ -15,14 +15,32 @@ The API is `steward.obligations.v1`, in
 ## Act-as
 
 The caller of `RecordAck` and `RecordView` is the forwarded actor (go-grpc-actor). It is believed
-only from a trusted caller (`OBLIGATIONS_TRUSTED_CALLERS` over mTLS); otherwise the call has no
-actor and is refused with `ACK_AUTH_REQUIRED`. During act-as the acknowledgement is the target's,
+only from a caller whose workload token was verified and whose access to the method is on behalf
+of a user (the gateway); otherwise the call has no actor and is refused with `ACK_AUTH_REQUIRED`. During act-as the acknowledgement is the target's,
 and its audit event names the real admin, keeping the target in `impersonated_user_id`.
+
+## Callers
+
+Every call needs a verified workload token ([configuration](configuration.md#service-to-service-authentication)).
+A missing or rejected token is `Unauthenticated`, a verified caller the method doesn't list is
+`PermissionDenied`, and while no issuer key set has loaded every call is `Unavailable`. Each refusal
+is logged and audited as `rpc.denied`, naming the calling service, never a user the call claimed.
+
+| Caller | Methods | Access |
+| --- | --- | --- |
+| gateway | every method except `TransferAcknowledgments` | on behalf of the signed-in user |
+| nobody | `AckService/TransferAcknowledgments` | refused |
+
+Obligations calls core and identity as itself, with its own token and no end-user actor: core's
+`GetCategory`, `GetCategoryRuleset`, `GetPolicy`, `GetPolicyVersion`, `ListPolicyVersions`,
+`ListObligatingPolicies`, `ResolvePolicyObligation` and `GetEmailServiceSecret`, and identity's
+`GetUser`, `ListAllUsers`, `ResolveEmail` and `ResolveFCMToken`.
 
 ## Health
 
 The server serves `grpc.health.v1` and reflection. `liveness` reports the process only; the empty
-name and `readiness` follow the required dependencies. Every `Health/Check` answer carries
+name and `readiness` follow the required dependencies, which include the issuer's key set
+(`jwks`) while service-to-service authentication is on. Every `Health/Check` answer carries
 `steward-version`, `steward-commit`, `steward-dep-postgres` and `steward-depstate-<name>`.
 `/livez` and `/readyz` serve the same over HTTP on `PROBE_PORT`; see the
 [runbook](runbook.md#probes).
