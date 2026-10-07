@@ -47,6 +47,10 @@ task proto       # fetch the pinned callee protos, buf lint, regenerate gen/
 
 Set `DATABASE_TEST_DSN` to run the store tests against an existing Postgres instead of a container.
 
+## 🙏 Acknowledgements
+
+Steward was originally written by [@Bugs5382](https://github.com/Bugs5382).
+
 ## ⚖️ License
 
 Apache-2.0 (c) 2026 The Steward Authors
