@@ -29,7 +29,7 @@ is logged and audited as `rpc.denied`, naming the calling service, never a user 
 | Caller | Methods | Access |
 | --- | --- | --- |
 | gateway | every method except `TransferAcknowledgments` | on behalf of the signed-in user |
-| nobody | `AckService/TransferAcknowledgments` | refused |
+| identity | `AckService/TransferAcknowledgments` (account merge and its preview) | on behalf of the admin running the merge |
 
 Obligations calls core and identity as itself, with its own token and no end-user actor: core's
 `GetCategory`, `GetCategoryRuleset`, `GetPolicy`, `GetPolicyVersion`, `ListPolicyVersions`,

@@ -46,15 +46,14 @@ func TestCallerPolicyCoversEveryMethodAndNothingElse(t *testing.T) {
 	}
 }
 
-// The gateway passes the signed-in user on every method it calls. Nobody
-// calls TransferAcknowledgments yet (identity's merge isn't wired to it), so
-// it is refused to every caller.
+// The gateway passes the signed-in user on every method it calls.
+// TransferAcknowledgments is identity's alone.
 func TestCallerPolicyGatewayActsOnBehalfOnEveryMethodButTheMergeTransfer(t *testing.T) {
 	p := CallerPolicy()
 	for _, m := range allMethods() {
 		a, ok := p.Lookup(m, CallerGateway)
 		if m == obligationsv1.AckService_TransferAcknowledgments_FullMethodName {
-			require.False(t, ok, "%s has no caller", m)
+			require.False(t, ok, "%s refuses the gateway", m)
 			continue
 		}
 		require.True(t, ok, "%s refuses the gateway", m)
@@ -62,13 +61,28 @@ func TestCallerPolicyGatewayActsOnBehalfOnEveryMethodButTheMergeTransfer(t *test
 	}
 }
 
+// Identity's account merge moves acknowledgements, passing the admin who runs
+// it; it may call nothing else.
+func TestCallerPolicyLetsIdentityTransferAcknowledgmentsOnBehalf(t *testing.T) {
+	p := CallerPolicy()
+	for _, m := range allMethods() {
+		a, ok := p.Lookup(m, CallerIdentity)
+		if m == obligationsv1.AckService_TransferAcknowledgments_FullMethodName {
+			require.True(t, ok, "%s refuses identity", m)
+			require.Equal(t, workloadauth.OnBehalf, a, m)
+			continue
+		}
+		require.False(t, ok, "%s lets identity call it", m)
+	}
+}
+
 func TestCallerPolicyListsNoOtherCaller(t *testing.T) {
 	for m, callers := range CallerPolicy() {
 		for c := range callers {
-			require.Equal(t, CallerGateway, c, "%s lists caller %q", m, c)
+			require.Contains(t, []string{CallerGateway, CallerIdentity}, c, "%s lists caller %q", m, c)
 		}
 	}
-	for _, other := range []string{"reporting", "identity", "core", "workflow", "collab", "ai", "delivery"} {
+	for _, other := range []string{"reporting", "core", "workflow", "collab", "ai", "delivery"} {
 		for _, m := range allMethods() {
 			_, ok := CallerPolicy().Lookup(m, other)
 			require.False(t, ok, "%s lets %s call it", m, other)
