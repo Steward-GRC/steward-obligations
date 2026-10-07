@@ -18,17 +18,20 @@ import (
 // steward-gateway.
 const CallerGateway = "gateway"
 
+// CallerIdentity is identity's caller name, from its service account
+// steward-identity.
+const CallerIdentity = "identity"
+
 var services = []grpc.ServiceDesc{
 	obligationsv1.AckService_ServiceDesc, obligationsv1.ObligationService_ServiceDesc,
 	obligationsv1.NotifPrefService_ServiceDesc, obligationsv1.ReportingService_ServiceDesc,
 	obligationsv1.WelcomeService_ServiceDesc,
 }
 
-// CallerPolicy is obligations' per-method allow-list. The gateway is the only
-// service that calls obligations, and it passes the signed-in user's actor on
-// every method it uses. TransferAcknowledgments has no caller yet (identity's
-// account merge doesn't call it), so it is refused to everyone. Anything else
-// is refused too.
+// CallerPolicy is obligations' per-method allow-list. The gateway passes the
+// signed-in user's actor on every method but TransferAcknowledgments, which
+// only identity's account merge calls, passing the admin who runs it. Anything
+// else is refused.
 func CallerPolicy() workloadauth.Policy {
 	p := workloadauth.Policy{}
 	for _, sd := range services {
@@ -36,7 +39,7 @@ func CallerPolicy() workloadauth.Policy {
 			p["/"+sd.ServiceName+"/"+md.MethodName] = map[string]workloadauth.Access{CallerGateway: workloadauth.OnBehalf}
 		}
 	}
-	p[obligationsv1.AckService_TransferAcknowledgments_FullMethodName] = map[string]workloadauth.Access{}
+	p[obligationsv1.AckService_TransferAcknowledgments_FullMethodName] = map[string]workloadauth.Access{CallerIdentity: workloadauth.OnBehalf}
 	return p
 }
 

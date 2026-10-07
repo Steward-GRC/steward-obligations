@@ -25,9 +25,9 @@ problem listed.
 Every gRPC call to obligations carries the caller's projected service-account token (audience
 `steward`) as `authorization: Bearer <token>`. Obligations verifies it against the cluster issuer's
 key set, maps `<namespace>/steward-<name>` to the caller name and checks the per-method allow-list
-in code (`internal/grpcsvc/callers.go`). The gateway is the only caller: it may call every method
-and pass the signed-in user's actor, except `TransferAcknowledgments`, which nobody calls yet and
-is refused. Health and reflection need no token. `internal/workloadauth` is a byte-identical copy
+in code (`internal/grpcsvc/callers.go`). The gateway may call every method and pass the signed-in
+user's actor, except `TransferAcknowledgments`, which only identity's account merge calls, passing
+the admin who runs it. Health and reflection need no token. `internal/workloadauth` is a byte-identical copy
 of steward-core's; `scripts/workloadauth-check.sh` compares it with core at `STEWARD_CORE_REF` in
 `proto-refs.env`.
 
@@ -39,7 +39,7 @@ of steward-core's; `scripts/workloadauth-check.sh` compares it with core at `STE
 | `WORKLOAD_OIDC_CA_FILE` | system roots | PEM bundle trusted for the discovery and JWKS fetch. |
 | `WORKLOAD_OIDC_BEARER_FILE` | none | A token sent on the discovery and JWKS fetch, re-read on every fetch. |
 | `WORKLOAD_AUDIENCE` | `steward` | The audience a caller's token must carry. |
-| `WORKLOAD_ALLOWED_SERVICEACCOUNTS` | required unless disabled | Comma list of `<namespace>/<serviceaccount>` that may call at all, for example `steward/steward-gateway`. |
+| `WORKLOAD_ALLOWED_SERVICEACCOUNTS` | required unless disabled | Comma list of `<namespace>/<serviceaccount>` that may call at all, for example `steward/steward-gateway,steward/steward-identity`. |
 | `WORKLOAD_TOKEN_FILE` | `/var/run/secrets/steward/token` when on | Obligations' own projected token, sent on every call to core and identity and re-read each time. An unreadable file stops the boot. Unused while `WORKLOAD_AUTH=disabled`. |
 
 A missing setting, a plain-http issuer or a malformed allow-list entry stops the boot.
