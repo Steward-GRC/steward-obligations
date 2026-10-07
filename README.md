@@ -36,6 +36,9 @@ in the [runbook](docs/runbook.md#probes).
 - [Render sidecar](docs/render.md).
 - [Error codes](docs/error-codes.md).
 
+- [Contributing](https://github.com/Steward-GRC/.github/blob/main/.github/CONTRIBUTING.md) and
+  [security](https://github.com/Steward-GRC/.github/blob/main/.github/SECURITY.md)
+
 ## 🛠 Develop
 
 ```bash
