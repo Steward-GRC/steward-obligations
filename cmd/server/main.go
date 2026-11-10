@@ -36,6 +36,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 
+	workloadidentity "github.com/Bugs5382/go-workload-identity"
 	obligationsv1 "github.com/Steward-GRC/steward-obligations/gen/go/steward/obligations/v1"
 	corev1 "github.com/Steward-GRC/steward-obligations/gen/go/thirdparty/core/v1"
 	identityv1 "github.com/Steward-GRC/steward-obligations/gen/go/thirdparty/identity/v1"
@@ -57,7 +58,6 @@ import (
 	"github.com/Steward-GRC/steward-obligations/internal/scheduler"
 	"github.com/Steward-GRC/steward-obligations/internal/server"
 	"github.com/Steward-GRC/steward-obligations/internal/store"
-	"github.com/Steward-GRC/steward-obligations/internal/workloadauth"
 )
 
 const serviceName = "obligations"
@@ -151,7 +151,7 @@ func run(ctx context.Context, lg log.Logger, logger zerolog.Logger) error {
 		return fmt.Errorf("workload token: %w", err)
 	}
 	if cfg.TokenFile == "" {
-		lg.Warn(workloadauth.EnvTokenFile + " is not used: calls to core and identity carry no workload token (WORKLOAD_AUTH=disabled)")
+		lg.Warn(workloadidentity.EnvTokenFile + " is not used: calls to core and identity carry no workload token (WORKLOAD_AUTH=disabled)")
 	}
 	dial := func(addr string) (*grpc.ClientConn, error) { return grpc.NewClient(addr, dialOpts...) }
 	coreConn, err := dial(cfg.CoreGRPCAddr)
@@ -361,14 +361,14 @@ func run(ctx context.Context, lg log.Logger, logger zerolog.Logger) error {
 		WithTx(func(ctx context.Context, fn func(context.Context) error) error { return store.InTx(ctx, db, fn) })
 	var auth *server.Auth
 	if cfg.WorkloadAuthEnabled {
-		v, err := workloadauth.NewVerifier(cfg.WorkloadAuth, lg)
+		v, err := workloadidentity.NewVerifier(cfg.WorkloadAuth, lg)
 		if err != nil {
 			return fmt.Errorf("workload auth: %w", err)
 		}
 		go v.Run(ctx)
 		deps.JWKS = readiness.RecheckEvery(v.Refresh, jwksRecheck, time.Now)
-		auth = &server.Auth{Verifier: v, Policy: grpcsvc.CallerPolicy(), Options: []workloadauth.Option{
-			workloadauth.WithDenyHook(grpcsvc.AuditDenial(auditEmitter, lg)),
+		auth = &server.Auth{Verifier: v, Policy: grpcsvc.CallerPolicy(), Options: []workloadidentity.Option{
+			workloadidentity.WithDenyHook(grpcsvc.AuditDenial(auditEmitter, lg)),
 		}}
 		lg.Info("service-to-service authentication on",
 			log.F("issuer", cfg.WorkloadAuth.Issuer), log.F("audience", cfg.WorkloadAuth.Audience),
@@ -377,7 +377,7 @@ func run(ctx context.Context, lg log.Logger, logger zerolog.Logger) error {
 			log.F("allowed_serviceaccounts", strings.Join(cfg.WorkloadAuth.AllowedServiceAccounts, ",")))
 	} else {
 		deps.WorkloadAuthDisabled = true
-		go workloadauth.WarnDisabled(ctx, lg, workloadauth.DisabledWarnInterval)
+		go workloadidentity.WarnDisabled(ctx, lg, workloadidentity.DisabledWarnInterval)
 	}
 
 	checker, err := readiness.New(deps, health.WithTTL(5*time.Second), health.WithTimeout(2*time.Second), health.WithLogger(lg))

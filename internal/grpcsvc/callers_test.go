@@ -12,9 +12,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	workloadidentity "github.com/Bugs5382/go-workload-identity"
 	obligationsv1 "github.com/Steward-GRC/steward-obligations/gen/go/steward/obligations/v1"
 	"github.com/Steward-GRC/steward-obligations/internal/audit"
-	"github.com/Steward-GRC/steward-obligations/internal/workloadauth"
 )
 
 var obligationsServices = []grpc.ServiceDesc{
@@ -57,7 +57,7 @@ func TestCallerPolicyGatewayActsOnBehalfOnEveryMethodButTheMergeTransfer(t *test
 			continue
 		}
 		require.True(t, ok, "%s refuses the gateway", m)
-		require.Equal(t, workloadauth.OnBehalf, a, m)
+		require.Equal(t, workloadidentity.OnBehalf, a, m)
 	}
 }
 
@@ -69,7 +69,7 @@ func TestCallerPolicyLetsIdentityTransferAcknowledgmentsOnBehalf(t *testing.T) {
 		a, ok := p.Lookup(m, CallerIdentity)
 		if m == obligationsv1.AckService_TransferAcknowledgments_FullMethodName {
 			require.True(t, ok, "%s refuses identity", m)
-			require.Equal(t, workloadauth.OnBehalf, a, m)
+			require.Equal(t, workloadidentity.OnBehalf, a, m)
 			continue
 		}
 		require.False(t, ok, "%s lets identity call it", m)
@@ -100,11 +100,11 @@ func (r *recordingEmitter) Emit(_ context.Context, ev audit.Event) error {
 func TestAuditDenialRecordsTheCallerNotAClaimedUser(t *testing.T) {
 	rec := &recordingEmitter{}
 	hook := AuditDenial(rec, log.Nop())
-	hook(context.Background(), workloadauth.Denial{
-		Method: obligationsv1.AckService_RecordAck_FullMethodName, Code: codes.PermissionDenied, Reason: workloadauth.ReasonMethodNotAllowed,
-		Caller: workloadauth.Caller{Name: "reporting", ServiceAccount: "steward/steward-reporting"},
+	hook(context.Background(), workloadidentity.Denial{
+		Method: obligationsv1.AckService_RecordAck_FullMethodName, Code: codes.PermissionDenied, Reason: workloadidentity.ReasonMethodNotAllowed,
+		Caller: workloadidentity.Caller{Name: "reporting", ServiceAccount: "steward/steward-reporting"},
 	})
-	hook(context.Background(), workloadauth.Denial{Method: "/m", Code: codes.Unauthenticated, Reason: workloadauth.ReasonNoToken})
+	hook(context.Background(), workloadidentity.Denial{Method: "/m", Code: codes.Unauthenticated, Reason: workloadidentity.ReasonNoToken})
 	require.Len(t, rec.evs, 2)
 	require.Equal(t, audit.TierAudit, rec.evs[0].Tier)
 	require.Equal(t, "rpc.denied", rec.evs[0].Action)
@@ -112,7 +112,7 @@ func TestAuditDenialRecordsTheCallerNotAClaimedUser(t *testing.T) {
 	require.Equal(t, obligationsv1.AckService_RecordAck_FullMethodName, rec.evs[0].Subject)
 	require.Equal(t, map[string]string{
 		"method": obligationsv1.AckService_RecordAck_FullMethodName, "caller": "reporting", "service_account": "steward/steward-reporting",
-		"code": "PermissionDenied", "reason": workloadauth.ReasonMethodNotAllowed,
+		"code": "PermissionDenied", "reason": workloadidentity.ReasonMethodNotAllowed,
 	}, rec.evs[0].Attributes)
 	require.Equal(t, "service:unauthenticated", rec.evs[1].ActorUserID)
 }

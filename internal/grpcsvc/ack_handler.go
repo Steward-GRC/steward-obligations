@@ -20,11 +20,11 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	workloadidentity "github.com/Bugs5382/go-workload-identity"
 	obligationsv1 "github.com/Steward-GRC/steward-obligations/gen/go/steward/obligations/v1"
 	"github.com/Steward-GRC/steward-obligations/internal/ack"
 	"github.com/Steward-GRC/steward-obligations/internal/errcodes"
 	"github.com/Steward-GRC/steward-obligations/internal/store"
-	"github.com/Steward-GRC/steward-obligations/internal/workloadauth"
 )
 
 // AckServiceBackend is the narrow interface the handler depends on; the
@@ -156,7 +156,7 @@ func (h *AckHandler) TransferAcknowledgments(ctx context.Context, req *obligatio
 		return nil, errcodes.Error(ctx, errcodes.AckTransferActorRequired())
 	}
 	var caller string
-	if g, ok := workloadauth.GrantFromContext(ctx); ok {
+	if g, ok := workloadidentity.GrantFromContext(ctx); ok {
 		caller = g.Caller.Name
 	}
 

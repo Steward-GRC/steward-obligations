@@ -8,7 +8,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/Steward-GRC/steward-obligations/internal/workloadauth"
+	workloadidentity "github.com/Bugs5382/go-workload-identity"
 )
 
 // DialOptions are the options for the outbound connections to core and
@@ -25,8 +25,8 @@ func DialOptions(tokenFile string) ([]grpc.DialOption, error) {
 	if tokenFile == "" {
 		return opts, nil
 	}
-	token, _, err := workloadauth.DialOptionFromEnv(func(k string) string {
-		if k == workloadauth.EnvTokenFile {
+	token, _, err := workloadidentity.DialOptionFromEnv(func(k string) string {
+		if k == workloadidentity.EnvTokenFile {
 			return tokenFile
 		}
 		return ""
