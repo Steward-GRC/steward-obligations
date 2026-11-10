@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	workloadidentity "github.com/Bugs5382/go-workload-identity"
 	"github.com/Steward-GRC/steward-obligations/internal/config"
-	"github.com/Steward-GRC/steward-obligations/internal/workloadauth"
 )
 
 // TestPortalPreferencesURLTargetsNotificationsRoute locks the email
@@ -65,11 +65,11 @@ func TestLoadReadsWorkloadAuth(t *testing.T) {
 	c, err := config.Load()
 	require.NoError(t, err)
 	require.True(t, c.WorkloadAuthEnabled)
-	require.Equal(t, workloadauth.Config{
+	require.Equal(t, workloadidentity.Config{
 		Issuer: "https://issuer.example.org", JWKSURL: "https://issuer.example.org/openid/v1/jwks", CAFile: "/oidc/ca.crt",
-		BearerFile: "/oidc/token", Audience: "steward", AllowedServiceAccounts: []string{"steward/steward-gateway", "steward/steward-reporting"},
+		BearerFile: "/oidc/token", Audience: "steward", ServiceAccountPrefix: "steward-", AllowedServiceAccounts: []string{"steward/steward-gateway", "steward/steward-reporting"},
 	}, c.WorkloadAuth)
-	require.Equal(t, workloadauth.DefaultTokenFile, c.TokenFile, "with auth on, outbound calls carry the mounted token")
+	require.Equal(t, config.DefaultTokenFile, c.TokenFile, "with auth on, outbound calls carry the mounted token")
 }
 
 func TestLoadTakesTheTokenFileFromTheEnvironment(t *testing.T) {
@@ -84,7 +84,7 @@ func TestLoadFailsClosedWithoutWorkloadAuth(t *testing.T) {
 	required(t)
 	t.Setenv("WORKLOAD_OIDC_ISSUER", "")
 	_, err := config.Load()
-	require.ErrorIs(t, err, workloadauth.ErrNotConfigured, "no issuer and no explicit off switch stops the boot")
+	require.ErrorIs(t, err, workloadidentity.ErrNotConfigured, "no issuer and no explicit off switch stops the boot")
 }
 
 func TestLoadTurnsWorkloadAuthOffOnlyWhenDisabled(t *testing.T) {
