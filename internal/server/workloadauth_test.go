@@ -32,10 +32,11 @@ import (
 	reflectionpb "google.golang.org/grpc/reflection/grpc_reflection_v1"
 	"google.golang.org/grpc/status"
 
+	workloadidentity "github.com/Bugs5382/go-workload-identity"
 	obligationsv1 "github.com/Steward-GRC/steward-obligations/gen/go/steward/obligations/v1"
+	"github.com/Steward-GRC/steward-obligations/internal/config"
 	"github.com/Steward-GRC/steward-obligations/internal/grpcsvc"
 	"github.com/Steward-GRC/steward-obligations/internal/readiness"
-	"github.com/Steward-GRC/steward-obligations/internal/workloadauth"
 )
 
 const testNS = "steward"
@@ -103,11 +104,11 @@ func (i *localIssuer) token(t *testing.T, sa, audience string) string {
 	return i.tokenAt(t, sa, audience, time.Now().Add(time.Hour))
 }
 
-func verifierFor(t *testing.T, iss *localIssuer, allowed ...string) *workloadauth.Verifier {
+func verifierFor(t *testing.T, iss *localIssuer, allowed ...string) *workloadidentity.Verifier {
 	t.Helper()
-	v, err := workloadauth.NewVerifier(workloadauth.Config{
-		Issuer: iss.url, CAFile: iss.caFile, Audience: "steward", AllowedServiceAccounts: allowed,
-	}, log.Nop())
+	v, err := workloadidentity.NewVerifier(config.StewardWorkload(workloadidentity.Config{
+		Issuer: iss.url, CAFile: iss.caFile, AllowedServiceAccounts: allowed,
+	}), log.Nop())
 	require.NoError(t, err)
 	return v
 }
@@ -198,11 +199,11 @@ func TestWorkloadAuthDisabledLetsCallsThroughButTrustsNoActor(t *testing.T) {
 }
 
 func TestTrustOnBehalfNeedsAnOnBehalfGrant(t *testing.T) {
-	grant := func(a workloadauth.Access) context.Context {
-		return workloadauth.ContextWithGrant(context.Background(), workloadauth.Grant{Caller: workloadauth.Caller{Name: "x"}, Access: a})
+	grant := func(a workloadidentity.Access) context.Context {
+		return workloadidentity.ContextWithGrant(context.Background(), workloadidentity.Grant{Caller: workloadidentity.Caller{Name: "x"}, Access: a})
 	}
-	require.True(t, TrustOnBehalf(grant(workloadauth.OnBehalf), "/m"))
-	require.False(t, TrustOnBehalf(grant(workloadauth.Self), "/m"))
+	require.True(t, TrustOnBehalf(grant(workloadidentity.OnBehalf), "/m"))
+	require.False(t, TrustOnBehalf(grant(workloadidentity.Self), "/m"))
 	require.False(t, TrustOnBehalf(context.Background(), "/m"), "no verified caller, no trust")
 }
 

@@ -27,9 +27,9 @@ Every gRPC call to obligations carries the caller's projected service-account to
 key set, maps `<namespace>/steward-<name>` to the caller name and checks the per-method allow-list
 in code (`internal/grpcsvc/callers.go`). The gateway may call every method and pass the signed-in
 user's actor, except `TransferAcknowledgments`, which only identity's account merge calls, passing
-the admin who runs it. Health and reflection need no token. `internal/workloadauth` is a byte-identical copy
-of steward-core's; `scripts/workloadauth-check.sh` compares it with core at `STEWARD_CORE_REF` in
-`proto-refs.env`.
+the admin who runs it. Health and reflection need no token. The verifier and interceptors come from
+[`github.com/Bugs5382/go-workload-identity`](https://github.com/Bugs5382/go-workload-identity); the audience
+and the `steward-` service-account prefix are set in `internal/config/workload.go`.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
