@@ -10,15 +10,15 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	workloadidentity "github.com/Bugs5382/go-workload-identity"
 	obligationsv1 "github.com/Steward-GRC/steward-obligations/gen/go/steward/obligations/v1"
 	"github.com/Steward-GRC/steward-obligations/internal/grpcsvc"
-	"github.com/Steward-GRC/steward-obligations/internal/workloadauth"
 )
 
 func identityGrant() context.Context {
-	return workloadauth.ContextWithGrant(context.Background(), workloadauth.Grant{
-		Caller: workloadauth.Caller{Name: grpcsvc.CallerIdentity, ServiceAccount: "steward/steward-identity"},
-		Access: workloadauth.OnBehalf,
+	return workloadidentity.ContextWithGrant(context.Background(), workloadidentity.Grant{
+		Caller: workloadidentity.Caller{Name: grpcsvc.CallerIdentity, ServiceAccount: "steward/steward-identity"},
+		Access: workloadidentity.OnBehalf,
 	})
 }
 

@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Steward-GRC/steward-obligations/internal/workloadauth"
+	workloadidentity "github.com/Bugs5382/go-workload-identity"
 )
 
 // TLS is the server certificate and the CA client certificates must chain
@@ -38,7 +38,7 @@ type Config struct {
 	// WorkloadAuth verifies the callers' workload tokens. It is set when
 	// WorkloadAuthEnabled; WORKLOAD_AUTH=disabled is the only way to turn it
 	// off.
-	WorkloadAuth        workloadauth.Config
+	WorkloadAuth        workloadidentity.Config
 	WorkloadAuthEnabled bool
 	// TokenFile is obligations' own projected token, sent on every call to
 	// core and identity. Empty (WORKLOAD_AUTH=disabled) sends none.
@@ -188,11 +188,11 @@ func Load() (Config, error) {
 
 	var errs []error
 	var err error
-	if c.WorkloadAuth, c.WorkloadAuthEnabled, err = workloadauth.ServerConfigFromEnv(os.Getenv); err != nil {
+	if c.WorkloadAuth, c.WorkloadAuthEnabled, err = serverWorkloadConfig(os.Getenv); err != nil {
 		errs = append(errs, err)
 	}
 	if c.WorkloadAuthEnabled {
-		c.TokenFile = getOr(workloadauth.EnvTokenFile, workloadauth.DefaultTokenFile)
+		c.TokenFile = getOr(workloadidentity.EnvTokenFile, DefaultTokenFile)
 	}
 	if c.DatabaseDSN == "" {
 		errs = append(errs, errors.New("DATABASE_DSN is required"))
