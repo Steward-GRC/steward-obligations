@@ -49,7 +49,7 @@ const WorkflowStarted = ({
     <EmailCallout level="info" title="Stay informed">
       You&apos;ll be notified as this workflow progresses.
     </EmailCallout>
-    <EmailSection align="center" padding="8px 32px 28px">
+    <EmailSection padding="8px 24px 24px">
       <EmailButton href={workflowUrl}>View workflow</EmailButton>
     </EmailSection>
   </NotificationLayout>

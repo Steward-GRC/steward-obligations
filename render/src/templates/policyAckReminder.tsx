@@ -62,6 +62,7 @@ const PolicyAckReminder = ({
     <NotificationLayout
       {...chrome}
       preferencesUrl={preferencesUrl}
+      required
       previewText={
         isLarge
           ? `You have ${policies.length} pending acknowledgements`
@@ -86,7 +87,7 @@ const PolicyAckReminder = ({
           Your earliest deadline is {nearestDueBy(policies)}.
         </EmailCallout>
       )}
-      <EmailSection align="center" padding="8px 32px 28px">
+      <EmailSection padding="8px 24px 24px">
         <EmailButton href={portalUrl}>{ctaLabel}</EmailButton>
       </EmailSection>
     </NotificationLayout>

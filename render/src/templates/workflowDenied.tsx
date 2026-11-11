@@ -48,7 +48,7 @@ const WorkflowDenied = ({
     <EmailCallout level="error" title="Reason">
       {reason}
     </EmailCallout>
-    <EmailSection align="center" padding="8px 32px 28px">
+    <EmailSection padding="8px 24px 24px">
       <EmailButton href={reviseUrl}>Revise &amp; resubmit</EmailButton>
     </EmailSection>
   </NotificationLayout>

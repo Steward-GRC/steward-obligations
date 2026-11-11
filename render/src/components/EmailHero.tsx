@@ -4,7 +4,7 @@
 import { Heading, Text } from "@react-email/components";
 
 import { EmailSection } from "./EmailSection.js";
-import { palette } from "./palette.js";
+import { DARK_CLASS, fontStack, palette } from "./palette.js";
 
 export interface EmailHeroProperties {
   eyebrow?: string;
@@ -13,9 +13,10 @@ export interface EmailHeroProperties {
 }
 
 export const EmailHero = ({ eyebrow, subtitle, title }: EmailHeroProperties) => (
-  <EmailSection padding="8px 32px 16px">
+  <EmailSection padding="24px 24px 14px">
     {eyebrow !== undefined && (
       <Text
+        className={DARK_CLASS.muted}
         style={{
           color: palette.muted,
           fontSize: "12px",
@@ -28,11 +29,15 @@ export const EmailHero = ({ eyebrow, subtitle, title }: EmailHeroProperties) => 
         {eyebrow}
       </Text>
     )}
-    <Heading as="h1" style={{ color: palette.text, fontSize: "24px", fontWeight: 600, lineHeight: "1.3", margin: 0 }}>
+    <Heading
+      as="h1"
+      className={DARK_CLASS.text}
+      style={{ color: palette.text, fontFamily: fontStack, fontSize: "22px", fontWeight: 700, lineHeight: "28px", margin: 0 }}
+    >
       {title}
     </Heading>
     {subtitle !== undefined && (
-      <Text style={{ color: palette.muted, fontSize: "14px", margin: "6px 0 0" }}>{subtitle}</Text>
+      <Text className={DARK_CLASS.muted} style={{ color: palette.muted, fontSize: "14px", margin: "6px 0 0" }}>{subtitle}</Text>
     )}
   </EmailSection>
 );

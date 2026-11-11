@@ -28,7 +28,7 @@ const RecoveryCode = ({
       {recipientName !== undefined ? `Hi ${recipientName}, use` : "Use"} the code below to reset your{" "}
       {productName} password.
     </EmailText>
-    <EmailSection align="center" background={palette.tint} padding="28px 32px">
+    <EmailSection align="center" background={palette.tint} padding="28px 24px">
       <EmailHeading size="lg">{recoveryCode.split("").join(DIGIT_GAP)}</EmailHeading>
     </EmailSection>
     <EmailText muted>

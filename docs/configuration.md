@@ -54,6 +54,7 @@ A missing setting, a plain-http issuer or a malformed allow-list entry stops the
 | `APP_ENV`, `DEV_MAIL_CATCHALL_TO` | empty | With `APP_ENV=dev`, every email goes to the catch-all address. |
 | `RENDER_SIDECAR_URL` | `http://127.0.0.1:8091` | The [render sidecar](render.md). |
 | `EMAIL_LOGO_URL`, `EMAIL_PRODUCT_NAME`, `EMAIL_LEGAL_TEXT` | empty | Adopter branding: a public logo URL, the product name ("Steward" when empty) and the footer's legal or postal line (none when empty). |
+| `EMAIL_ORGANISATION_NAME`, `EMAIL_MARK_URL` | empty | The organisation name shown on the right of the email header, and the public URL of the Steward mark PNG for the header's paper tile (see [render](render.md)). |
 | `EMAIL_SERVICE_BREAKER_THRESHOLD`, `EMAIL_SERVICE_BREAKER_COOLDOWN_SEC` | `5`, `30` | Failures before the email-service transport counts as down, and the wait before trying it again. |
 | `EMAIL_SERVICE_USAGE_SOFT_THRESHOLD`, `EMAIL_SERVICE_USAGE_HARD_CEILING`, `EMAIL_SERVICE_USAGE_POLL_SEC` | `0.80`, `0` (none), `300` | Plan-usage warnings, and the count past which mail is held. |
 | `MAIL_OUTBOX_DRAIN_RATE` | `10` | Held messages sent per second once a transport works again. |

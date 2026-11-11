@@ -23,7 +23,7 @@ const MfaSetup = ({ email, name, setupUrl, ...chrome }: MfaSetupProperties) => (
       You&apos;ll be asked to set up MFA on your next sign-in if you haven&apos;t done so already.
     </EmailCallout>
     {setupUrl !== undefined && (
-      <EmailSection align="center" padding="8px 32px 28px">
+      <EmailSection padding="8px 24px 24px">
         <EmailButton href={setupUrl}>Set up MFA</EmailButton>
       </EmailSection>
     )}

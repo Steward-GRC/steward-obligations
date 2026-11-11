@@ -10,6 +10,8 @@ export const DEFAULT_PRODUCT_NAME = "Steward";
 export interface ChromeProperties {
   legalText?: string;
   logoSrc?: string;
+  markSrc?: string;
+  organisationName?: string;
   productName?: string;
 }
 
@@ -17,6 +19,8 @@ export interface NotificationLayoutProperties extends ChromeProperties {
   children: ReactNode;
   preferencesUrl?: string;
   previewText?: string;
+  // Compliance mail the recipient cannot turn off; the footer says so.
+  required?: boolean;
   // RFC 8058 one-click target; only optional, informational mail passes it.
   unsubscribeHref?: string;
 }
@@ -25,14 +29,22 @@ export const NotificationLayout = ({
   children,
   legalText,
   logoSrc,
+  markSrc,
+  organisationName,
   preferencesUrl,
   previewText,
   productName = DEFAULT_PRODUCT_NAME,
+  required,
   unsubscribeHref,
 }: NotificationLayoutProperties) => (
   <EmailLayout previewText={previewText}>
-    <EmailHeader logoSrc={logoSrc} productName={productName} />
+    <EmailHeader logoSrc={logoSrc} markSrc={markSrc} organisationName={organisationName} productName={productName} />
     {children}
-    <EmailFooter legalText={legalText} preferencesUrl={preferencesUrl} unsubscribeHref={unsubscribeHref} />
+    <EmailFooter
+      legalText={legalText}
+      preferencesUrl={preferencesUrl}
+      required={required}
+      unsubscribeHref={unsubscribeHref}
+    />
   </EmailLayout>
 );

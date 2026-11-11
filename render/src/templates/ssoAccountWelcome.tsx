@@ -29,7 +29,7 @@ const SsoAccountWelcome = ({
       organization&apos;s identity provider. You&apos;re all set, and you can sign in any time.
     </EmailText>
     {loginUrl !== undefined && (
-      <EmailSection align="center" padding="8px 32px 28px">
+      <EmailSection padding="8px 24px 24px">
         <EmailButton href={loginUrl}>Sign in with SSO</EmailButton>
       </EmailSection>
     )}

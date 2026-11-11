@@ -21,7 +21,7 @@ const Otp = ({ code, expiresInMinutes, recipientName, requestContext, ...chrome 
       {recipientName !== undefined ? `Hi ${recipientName}, use` : "Use"} the code below
       {requestContext !== undefined ? ` to ${requestContext}` : ""}.
     </EmailText>
-    <EmailSection align="center" background={palette.tint} padding="28px 32px">
+    <EmailSection align="center" background={palette.tint} padding="28px 24px">
       <EmailHeading size="lg">{code.split("").join(DIGIT_GAP)}</EmailHeading>
     </EmailSection>
     <EmailText muted>

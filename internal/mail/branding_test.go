@@ -54,3 +54,26 @@ func TestSenderLeavesBrandingOutWhenUnset(t *testing.T) {
 	require.NotContains(t, vars, "legalText")
 	require.Equal(t, "Kept", vars["productName"], "a caller's own value wins")
 }
+
+func TestSenderStampsTheOrganisationNameAndMark(t *testing.T) {
+	var vars map[string]any
+	s, err := mail.NewSender(mail.SenderConfig{
+		SMTPHost: "smtp.example.org", SMTPPort: "587", SidecarURL: capturingSidecar(t, &vars).URL, AppEnv: "prod",
+		OrganisationName: "Example Organisation", MarkSrc: "https://policies.example.org/steward-email-mark-2x.png",
+	}, mail.WithTransport(&fakeTransport{}))
+	require.NoError(t, err)
+	require.NoError(t, s.Send(context.Background(), "ack-reminder", "u1", "erin@example.org", "pv1", map[string]any{}))
+	require.Equal(t, "Example Organisation", vars["organisationName"])
+	require.Equal(t, "https://policies.example.org/steward-email-mark-2x.png", vars["markSrc"])
+}
+
+func TestSenderLeavesTheOrganisationSlotOutWhenUnset(t *testing.T) {
+	var vars map[string]any
+	s, err := mail.NewSender(mail.SenderConfig{
+		SMTPHost: "smtp.example.org", SMTPPort: "587", SidecarURL: capturingSidecar(t, &vars).URL, AppEnv: "prod",
+	}, mail.WithTransport(&fakeTransport{}))
+	require.NoError(t, err)
+	require.NoError(t, s.Send(context.Background(), "ack-reminder", "u1", "erin@example.org", "pv1", map[string]any{}))
+	require.NotContains(t, vars, "organisationName")
+	require.NotContains(t, vars, "markSrc")
+}

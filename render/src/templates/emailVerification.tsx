@@ -31,7 +31,7 @@ const EmailVerification = ({
       Confirm that this address belongs to you by clicking the button below. This link expires in{" "}
       {ttlHours} hours.
     </EmailText>
-    <EmailSection align="center" padding="8px 32px 28px">
+    <EmailSection padding="8px 24px 24px">
       <EmailButton href={verifyUrl}>{verifyLabel}</EmailButton>
     </EmailSection>
     <EmailText muted>

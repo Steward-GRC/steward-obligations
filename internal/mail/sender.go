@@ -71,6 +71,11 @@ type SenderConfig struct {
 	// render sidecar's defaults (the product name "Steward", no footer line).
 	ProductName string
 	LegalText   string
+	// OrganisationName is the adopter's name, shown on the right of the email
+	// header. MarkSrc is the absolute, public URL of the Steward mark PNG shown
+	// in the header's paper tile. Empty leaves each out.
+	OrganisationName string
+	MarkSrc          string
 }
 
 // senderOptions collects the values an Option can override in NewSender.
@@ -365,7 +370,7 @@ func NewSender(cfg SenderConfig, opts ...Option) (*Sender, error) {
 	)
 
 	branding := map[string]string{}
-	for k, v := range map[string]string{"logoSrc": cfg.LogoSrc, "productName": cfg.ProductName, "legalText": cfg.LegalText} {
+	for k, v := range map[string]string{"logoSrc": cfg.LogoSrc, "productName": cfg.ProductName, "legalText": cfg.LegalText, "organisationName": cfg.OrganisationName, "markSrc": cfg.MarkSrc} {
 		if v != "" {
 			branding[k] = v
 		}

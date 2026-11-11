@@ -215,6 +215,9 @@ func run(ctx context.Context, lg log.Logger, logger zerolog.Logger) error {
 		LogoSrc:         cfg.EmailLogoSrc,
 		ProductName:     cfg.EmailProductName,
 		LegalText:       cfg.EmailLegalText,
+
+		OrganisationName: cfg.EmailOrganisationName,
+		MarkSrc:          cfg.EmailMarkSrc,
 	}
 
 	// Each send goes to the email service when the adopter has turned it on in

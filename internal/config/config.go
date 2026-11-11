@@ -77,6 +77,11 @@ type Config struct {
 	EmailLogoSrc     string
 	EmailProductName string
 	EmailLegalText   string
+	// EmailOrganisationName is the adopter's name, shown on the right of the
+	// email header. EmailMarkSrc is the public URL of the Steward mark PNG for
+	// the header's paper tile.
+	EmailOrganisationName string
+	EmailMarkSrc          string
 
 	// UnsubscribeSecret signs the unsubscribe, preferences and
 	// email-verification links; empty turns all three off.
@@ -155,6 +160,9 @@ func Load() (Config, error) {
 		EmailLogoSrc:     os.Getenv("EMAIL_LOGO_URL"),
 		EmailProductName: os.Getenv("EMAIL_PRODUCT_NAME"),
 		EmailLegalText:   os.Getenv("EMAIL_LEGAL_TEXT"),
+
+		EmailOrganisationName: os.Getenv("EMAIL_ORGANISATION_NAME"),
+		EmailMarkSrc:          os.Getenv("EMAIL_MARK_URL"),
 
 		UnsubscribeSecret:       os.Getenv("NOTIFY_UNSUB_SECRET"),
 		UnsubscribeEndpointURL:  getOr("NOTIFY_UNSUB_ENDPOINT_URL", publicBase+"/notify/unsubscribe"),

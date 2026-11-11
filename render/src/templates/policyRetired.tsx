@@ -45,7 +45,7 @@ const PolicyRetired = ({
       This policy has been retired. Any outstanding acknowledgement for it has been cancelled, so
       you do not need to take any action.
     </EmailCallout>
-    <EmailSection align="center" padding="8px 32px 28px">
+    <EmailSection padding="8px 24px 24px">
       <EmailButton href={policyUrl}>View policies</EmailButton>
     </EmailSection>
   </NotificationLayout>

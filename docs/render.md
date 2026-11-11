@@ -16,14 +16,23 @@ Email components built on the neutral primitives in `render/src/components/`.
 returns `200` with `{ "subject": "...", "html": "<!DOCTYPE ..." }`.
 
 - `vars.subject`, when set, replaces the kind's default subject.
-- `vars.productName` (default `Steward`) is shown in the header and used in
-  product-branded subjects and copy.
-- `vars.logoSrc` is an absolute image URL for the header. Without it no remote
-  image is loaded.
-- `vars.legalText` is the adopter's legal or postal footer line. It is empty by
-  default.
+- `vars.productName` (default `Steward`) is the Georgia wordmark in the header
+  and is used in product-branded subjects and copy.
+- `vars.organisationName` is shown on the right of the header. Without it the
+  slot is left out.
+- `vars.logoSrc` is the adopter's own logo, an absolute image URL shown beside
+  the organisation name. Without it no remote image is loaded.
+- `vars.markSrc` is an absolute URL of the Steward mark PNG for the 28 px paper
+  tile in the header (`render/assets/email/steward-email-mark-2x.png`). The tile
+  is left empty without it, and no image is loaded.
+- `vars.legalText` is the organisation's postal address, the first line of the
+  footer. It is empty by default.
 - `vars.preferencesUrl` adds a "Manage email preferences" link to the footer.
-  `vars.unsubscribeHref` adds an unsubscribe line (the digest uses it).
+  `vars.unsubscribeHref` adds "Unsubscribe from these emails" (the digest uses
+  it). Mail with neither says it is a security email and can't be unsubscribed
+  from.
+- `vars.reviewUrl` on `break-glass-alert` adds the red "Review this immediately"
+  button.
 - An unknown kind, malformed JSON or a template that fails to render returns
   `400` with `{ "error": "..." }`.
 
@@ -45,6 +54,7 @@ with an `Allow` header.
 | `kratos-recovery` | Reset your Steward password |
 | `assigned-as-owner` | You've been assigned as category owner |
 | `raci-permission-granted` | You've been granted a new permission |
+| `review-due` | Policy review due |
 | `workflow-started` | A workflow has started |
 | `workflow-awaiting-approval` | Your approval is needed |
 | `workflow-denied` | Your submission was returned |
@@ -62,6 +72,22 @@ with an `Allow` header.
 | `digest` | Your Steward digest |
 
 "Steward" in a subject follows `vars.productName`.
+
+## Design
+
+The layout follows the stored email design (the "email" tokens in the plan
+repo's `design/tokens.json` and the frames in "Steward Emails"): a 600 px table
+that is fluid on phones, a 4 px plum rule, the header lockup, the body with one
+solid plum button, and a paper footer. Colours and type are in
+`render/src/components/palette.ts`: Arial 16/24 body, a Georgia wordmark, a
+22/28 bold title, radius 6. The dark client is a `prefers-color-scheme: dark`
+block using the stored dark tokens; buttons stay solid plum with white text so a
+client's forced inversion can't wash them out.
+
+`render/assets/email/` holds `steward-email-header.svg` and
+`steward-email-header-2x.png` from the design, and `steward-email-mark-2x.png`,
+the mark cropped from that PNG. The sidecar does not serve them: host the mark
+at a public URL and set `EMAIL_MARK_URL`.
 
 ## Health
 

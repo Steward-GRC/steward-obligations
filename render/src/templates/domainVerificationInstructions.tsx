@@ -39,7 +39,7 @@ const DomainVerificationInstructions = ({
     <EmailCard>
       <EmailRow meta={dnsRecordName} title="Record name" />
     </EmailCard>
-    <EmailSection align="center" background={palette.tint} padding="28px 32px">
+    <EmailSection align="center" background={palette.tint} padding="28px 24px">
       <EmailHeading size="sm">{token}</EmailHeading>
     </EmailSection>
     <EmailCallout level="info" title="How to add this record">
