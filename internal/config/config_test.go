@@ -155,7 +155,7 @@ func TestLoadOTLPEndpoint(t *testing.T) {
 			t.Setenv("WORKLOAD_AUTH", "disabled")
 			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", tc.val)
 			if !tc.set {
-				os.Unsetenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+				require.NoError(t, os.Unsetenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
 			}
 			c, err := config.Load()
 			require.NoError(t, err)
