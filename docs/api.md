@@ -10,11 +10,12 @@ The API is `steward.obligations.v1`, in
 | `ObligationService` | `GetMyObligations`, `MyAckSummary`, `GetObligatedAudienceCount`. |
 | `ReportingService` | `GetCompletionReport`, `GetAckRoster`, `GetAckActivity`, `ExportAcks` (CSV or JSON). |
 | `NotifPrefService` | Channel switches, the notification-type catalogue, category and type cadences (off is refused for mandatory categories), and the digest window. |
+| `InboxService` | The signed-in user's in-app notices: `ListNotices` (newest first, paged, filtered All, Needs action or Updates), `CountUnread`, `MarkRead` and `MarkAllRead`. Each notice carries its kind, category, `needs_action`, structured payload, `created_at` and `read_at`; the gateway renders the title, line and link. The user is always the forwarded actor and no request names one, so a person only reaches their own notices. |
 | `WelcomeService` | `ResendWelcome`, an admin action. |
 
 ## Act-as
 
-The caller of `RecordAck` and `RecordView` is the forwarded actor (go-grpc-actor). It is believed
+The caller of `RecordAck`, `RecordView` and every `InboxService` method (refused with `INBOX_AUTH_REQUIRED` when there is none) is the forwarded actor (go-grpc-actor). It is believed
 only from a caller whose workload token was verified and whose access to the method is on behalf
 of a user (the gateway); otherwise the call has no actor and is refused with `ACK_AUTH_REQUIRED`. During act-as the acknowledgement is the target's,
 and its audit event names the real admin, keeping the target in `impersonated_user_id`.

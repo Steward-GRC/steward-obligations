@@ -27,6 +27,9 @@ const (
 	CodePrefMandatoryOff         = 7004
 	CodePrefInvalid              = 7005
 	CodeAckTransferActorRequired = 7006
+	CodeInboxAuthRequired        = 7007
+	CodeInboxNoticeNotFound      = 7008
+	CodeInboxPageInvalid         = 7009
 )
 
 // Entries returns the registry entries.
@@ -49,6 +52,15 @@ func Entries() []apperr.Entry {
 			UserSafe: true, Message: "That notification preference isn't valid — check the value and try again."},
 		{Code: CodeAckTransferActorRequired, Symbol: "ACK_TRANSFER_ACTOR_REQUIRED", Category: apperr.CategoryInvalid,
 			Title: "transfer acknowledgements", Cause: "a real (not dry-run) transfer named no actor_user_id, so its audit event would name nobody"},
+		{Code: CodeInboxAuthRequired, Symbol: "INBOX_AUTH_REQUIRED", Category: apperr.CategoryUnauthenticated,
+			Title: "notification inbox", Cause: "an inbox call ran without a forwarded actor to scope it to",
+			UserSafe: true, Message: "You need to be signed in to see your notifications."},
+		{Code: CodeInboxNoticeNotFound, Symbol: "INBOX_NOTICE_NOT_FOUND", Category: apperr.CategoryNotFound,
+			Title: "notification inbox", Cause: "MarkRead named a notice the actor does not have: it does not exist or is someone else's; the two are not told apart",
+			UserSafe: true, Message: "That notification is no longer here."},
+		{Code: CodeInboxPageInvalid, Symbol: "INBOX_PAGE_INVALID", Category: apperr.CategoryInvalid,
+			Title: "notification inbox", Cause: "ListNotices carried a page token this service did not issue, or a filter it does not know",
+			UserSafe: true, Message: "That page of notifications isn't valid — reload the list."},
 	}
 }
 
@@ -123,6 +135,15 @@ func PrefInvalid(field string, cause error) error {
 func AckTransferActorRequired() error {
 	return apperr.Coded(CodeAckTransferActorRequired, errNoTransferActor)
 }
+
+// InboxAuthRequired codes an inbox call with no actor.
+func InboxAuthRequired() error { return apperr.Coded(CodeInboxAuthRequired, errNoActor) }
+
+// InboxNoticeNotFound codes a MarkRead of a notice the actor does not have.
+func InboxNoticeNotFound(cause error) error { return apperr.Coded(CodeInboxNoticeNotFound, cause) }
+
+// InboxPageInvalid codes a page token this service did not issue.
+func InboxPageInvalid(cause error) error { return apperr.Coded(CodeInboxPageInvalid, cause) }
 
 type logSink struct{ l log.Logger }
 

@@ -47,6 +47,7 @@ import (
 	"github.com/Steward-GRC/steward-obligations/internal/consumer"
 	"github.com/Steward-GRC/steward-obligations/internal/emailservice"
 	"github.com/Steward-GRC/steward-obligations/internal/grpcsvc"
+	"github.com/Steward-GRC/steward-obligations/internal/inbox"
 	"github.com/Steward-GRC/steward-obligations/internal/mail"
 	"github.com/Steward-GRC/steward-obligations/internal/notifpolicy"
 	"github.com/Steward-GRC/steward-obligations/internal/notifprefs"
@@ -413,6 +414,7 @@ func run(ctx context.Context, lg log.Logger, logger zerolog.Logger) error {
 		obligationsv1.RegisterNotifPrefServiceServer(s, grpcsvc.NewNotifPrefHandler(notifPrefStore).WithSettings(notifSettings))
 		obligationsv1.RegisterReportingServiceServer(s, grpcsvc.NewReportingHandler(reporting.NewExporter(store.NewAckExportStore(db)), resolver))
 		obligationsv1.RegisterObligationServiceServer(s, grpcsvc.NewObligationHandler(resolver))
+		obligationsv1.RegisterInboxServiceServer(s, grpcsvc.NewInboxHandler(inbox.NewService(store.NewInboxStore(db))))
 		obligationsv1.RegisterWelcomeServiceServer(s, grpcsvc.NewWelcomeHandler(identityClient, mailSender, cfg.PortalAccountURL))
 	})
 	cancel()

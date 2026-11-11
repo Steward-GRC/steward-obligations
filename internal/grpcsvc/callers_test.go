@@ -20,7 +20,7 @@ import (
 var obligationsServices = []grpc.ServiceDesc{
 	obligationsv1.AckService_ServiceDesc, obligationsv1.ObligationService_ServiceDesc,
 	obligationsv1.NotifPrefService_ServiceDesc, obligationsv1.ReportingService_ServiceDesc,
-	obligationsv1.WelcomeService_ServiceDesc,
+	obligationsv1.WelcomeService_ServiceDesc, obligationsv1.InboxService_ServiceDesc,
 }
 
 func allMethods() []string {
