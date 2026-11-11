@@ -21,7 +21,7 @@ const BreakGlassReadAlert = ({
   title,
   ...chrome
 }: BreakGlassReadAlertProperties) => (
-  <NotificationLayout {...chrome} previewText={`Security alert: break-glass read of ${number}`}>
+  <NotificationLayout {...chrome} notice="security" previewText={`Security alert: break-glass read of ${number}`}>
     <EmailHero eyebrow="Security alert" title="A document was read under break-glass" />
     <EmailText>
       {number} {title} was read with a time-boxed break-glass grant, outside the normal access rules.

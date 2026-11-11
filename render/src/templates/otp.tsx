@@ -15,7 +15,7 @@ export interface OtpProperties extends ChromeProperties {
 }
 
 const Otp = ({ code, expiresInMinutes, recipientName, requestContext, ...chrome }: OtpProperties) => (
-  <NotificationLayout {...chrome} previewText="Your verification code">
+  <NotificationLayout {...chrome} notice="security" previewText="Your verification code">
     <EmailHero eyebrow="Verification" title="Your verification code" />
     <EmailText>
       {recipientName !== undefined ? `Hi ${recipientName}, use` : "Use"} the code below

@@ -22,7 +22,7 @@ const RecoveryCode = ({
   recoveryCode,
   ...chrome
 }: RecoveryCodeProperties) => (
-  <NotificationLayout {...chrome} previewText={`Reset your ${productName} password`} productName={productName}>
+  <NotificationLayout {...chrome} notice="security" previewText={`Reset your ${productName} password`} productName={productName}>
     <EmailHero eyebrow="Password reset" title={`Reset your ${productName} password`} />
     <EmailText>
       {recipientName !== undefined ? `Hi ${recipientName}, use` : "Use"} the code below to reset your{" "}

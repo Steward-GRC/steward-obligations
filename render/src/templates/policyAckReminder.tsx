@@ -61,8 +61,8 @@ const PolicyAckReminder = ({
   return (
     <NotificationLayout
       {...chrome}
+      notice="required"
       preferencesUrl={preferencesUrl}
-      required
       previewText={
         isLarge
           ? `You have ${policies.length} pending acknowledgements`

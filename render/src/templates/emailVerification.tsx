@@ -22,6 +22,7 @@ const EmailVerification = ({
 }: EmailVerificationProperties) => (
   <NotificationLayout
     {...chrome}
+    notice="security"
     previewText="Confirm your email address to finish setting up your account"
     productName={productName}
   >

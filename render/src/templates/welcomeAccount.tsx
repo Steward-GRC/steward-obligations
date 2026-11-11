@@ -25,6 +25,7 @@ const WelcomeAccount = ({
 }: WelcomeAccountProperties) => (
   <NotificationLayout
     {...chrome}
+    notice="security"
     previewText={`Welcome, your account is ready, ${recipientName}.`}
     productName={productName}
   >

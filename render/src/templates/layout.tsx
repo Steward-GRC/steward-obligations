@@ -19,8 +19,8 @@ export interface NotificationLayoutProperties extends ChromeProperties {
   children: ReactNode;
   preferencesUrl?: string;
   previewText?: string;
-  // Compliance mail the recipient cannot turn off; the footer says so.
-  required?: boolean;
+  // The footer's notice for mail with no opt-out; see EmailFooter.
+  notice?: "required" | "security";
   // RFC 8058 one-click target; only optional, informational mail passes it.
   unsubscribeHref?: string;
 }
@@ -33,8 +33,8 @@ export const NotificationLayout = ({
   organisationName,
   preferencesUrl,
   previewText,
+  notice,
   productName = DEFAULT_PRODUCT_NAME,
-  required,
   unsubscribeHref,
 }: NotificationLayoutProperties) => (
   <EmailLayout previewText={previewText}>
@@ -43,7 +43,7 @@ export const NotificationLayout = ({
     <EmailFooter
       legalText={legalText}
       preferencesUrl={preferencesUrl}
-      required={required}
+      notice={notice}
       unsubscribeHref={unsubscribeHref}
     />
   </EmailLayout>

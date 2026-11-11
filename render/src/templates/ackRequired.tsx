@@ -31,7 +31,7 @@ const AckRequired = ({
   recipientName,
   ...chrome
 }: AckRequiredProperties) => (
-  <NotificationLayout {...chrome} preferencesUrl={preferencesUrl} required previewText={`Action required: ${itemTitle}`}>
+  <NotificationLayout {...chrome} notice="required" preferencesUrl={preferencesUrl} previewText={`Action required: ${itemTitle}`}>
     <EmailHero eyebrow="Action required" title="Your acknowledgement is needed" />
     <EmailText>Hi {recipientName},</EmailText>
     <EmailText>{bodyText}</EmailText>

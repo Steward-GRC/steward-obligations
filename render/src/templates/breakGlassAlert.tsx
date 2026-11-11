@@ -13,7 +13,7 @@ export interface BreakGlassAlertProperties extends ChromeProperties {
 }
 
 const BreakGlassAlert = ({ at, email, reason, reviewUrl, ...chrome }: BreakGlassAlertProperties) => (
-  <NotificationLayout {...chrome} previewText={`Security alert: break-glass sign-in for ${email}`}>
+  <NotificationLayout {...chrome} notice="security" previewText={`Security alert: break-glass sign-in for ${email}`}>
     <EmailHero eyebrow="Security alert" title="A break-glass sign-in was used" />
     <EmailText>The break-glass credential for {email} was used to bypass single sign-on.</EmailText>
     {(at !== undefined || reason !== undefined) && (

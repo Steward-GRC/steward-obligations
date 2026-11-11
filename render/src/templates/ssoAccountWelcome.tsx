@@ -21,7 +21,7 @@ const SsoAccountWelcome = ({
   productName = DEFAULT_PRODUCT_NAME,
   ...chrome
 }: SsoAccountWelcomeProperties) => (
-  <NotificationLayout {...chrome} previewText="Welcome, your account is ready" productName={productName}>
+  <NotificationLayout {...chrome} notice="security" previewText="Welcome, your account is ready" productName={productName}>
     <EmailHero eyebrow="Welcome" title="Welcome, your account is ready" />
     <EmailText>Hi {name ?? email},</EmailText>
     <EmailText>

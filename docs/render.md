@@ -23,14 +23,17 @@ returns `200` with `{ "subject": "...", "html": "<!DOCTYPE ..." }`.
 - `vars.logoSrc` is the adopter's own logo, an absolute image URL shown beside
   the organisation name. Without it no remote image is loaded.
 - `vars.markSrc` is an absolute URL of the Steward mark PNG for the 28 px paper
-  tile in the header (`render/assets/email/steward-email-mark-2x.png`). The tile
-  is left empty without it, and no image is loaded.
+  tile in the header (`render/assets/email/steward-email-mark-2x.png`). Without
+  it there is no tile, only the wordmark, and no image is loaded.
 - `vars.legalText` is the organisation's postal address, the first line of the
   footer. It is empty by default.
 - `vars.preferencesUrl` adds a "Manage email preferences" link to the footer.
   `vars.unsubscribeHref` adds "Unsubscribe from these emails" (the digest uses
   it). Mail with neither says it is a security email and can't be unsubscribed
-  from.
+  from. Security mail (sign-in codes, account and break-glass notices) never
+  shows the preferences or unsubscribe links, even when the sender stamps them.
+  Required compliance mail keeps the preferences link and says it can't be
+  turned off.
 - `vars.reviewUrl` on `break-glass-alert` adds the red "Review this immediately"
   button.
 - An unknown kind, malformed JSON or a template that fails to render returns

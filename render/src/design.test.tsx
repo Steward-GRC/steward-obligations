@@ -82,7 +82,11 @@ test("every email opens with the 4 px plum rule above the header lockup", async 
 });
 
 test("the lockup is a 28 px paper tile, a Georgia wordmark and the organisation name on the right", async () => {
-  const html = await renderKind("otp", { ...EMAIL_SAMPLE_VARS.otp, organisationName: "Example Organisation" });
+  const html = await renderKind("otp", {
+    ...EMAIL_SAMPLE_VARS.otp,
+    markSrc: "https://policies.example.org/static/steward-email-mark-2x.png",
+    organisationName: "Example Organisation",
+  });
   const tile = indexOfOrFail(html, "data-email-tile");
   const tileTag = html.slice(html.lastIndexOf("<", tile), html.indexOf(">", tile));
   assert.ok(tileTag.includes("width:28px"));
@@ -101,6 +105,12 @@ test("the lockup is a 28 px paper tile, a Georgia wordmark and the organisation 
   const orgText = html.slice(org, html.indexOf("</td>", org));
   assert.ok(orgText.includes("font-size:13px"));
   assert.ok(orgText.includes("Example Organisation"));
+});
+
+test("without a mark there is no empty tile, only the wordmark", async () => {
+  const html = await renderKind("otp");
+  assert.ok(!html.includes("data-email-tile"));
+  assert.ok(html.includes("data-email-wordmark"));
 });
 
 test("the organisation slot is absent when no organisation name is given", async () => {
@@ -141,6 +151,42 @@ test("mandatory security mail says why it has no opt-out", async () => {
     assert.ok(html.includes("This is a security email, so you can&#x27;t unsubscribe from it."), kind);
   }
   assert.ok(!(await renderKind("digest")).includes("security email"));
+});
+
+test("security mail keeps its notice and drops the opt-out even when the sender stamps a preferences link", async () => {
+  const stamped = { preferencesUrl: "https://policies.example.org/portal/preferences?token=t", unsubscribeHref: "https://policies.example.org/unsub?token=t" };
+  for (const kind of [
+    "welcome-account",
+    "email-verification",
+    "otp",
+    "kratos-recovery",
+    "break-glass-alert",
+    "break-glass-read-alert",
+    "mfa-setup",
+    "sso-account-welcome",
+  ] as const) {
+    const html = await renderKind(kind, { ...EMAIL_SAMPLE_VARS[kind], ...stamped });
+    assert.ok(html.includes("This is a security email"), kind);
+    assert.ok(!html.includes("Manage email preferences"), kind);
+    assert.ok(!html.includes("Unsubscribe"), kind);
+  }
+});
+
+test("required mail without a preferences link is not labelled a security email", async () => {
+  for (const kind of ["ack-required", "policy-ack-reminder", "policy-escalation", "policy-published"] as const) {
+    const { preferencesUrl: _unused, ...bare } = EMAIL_SAMPLE_VARS[kind];
+    const html = await renderKind(kind, bare);
+    assert.ok(!html.includes("security email"), kind);
+    assert.ok(html.includes("Required for auditability"), kind);
+  }
+});
+
+test("optional mail without a preferences link carries no notice at all", async () => {
+  const { preferencesUrl, ...bare } = EMAIL_SAMPLE_VARS["policy-retired"];
+  assert.ok(preferencesUrl !== undefined);
+  const html = await renderKind("policy-retired", bare);
+  assert.ok(!html.includes("security email"));
+  assert.ok(!html.includes("Required for auditability"));
 });
 
 test("required compliance mail says it cannot be turned off and still links preferences", async () => {
@@ -193,7 +239,7 @@ test("review-due (E6) names the policy, its category and the due date, with the 
   }
 });
 
-test("the stored header assets ship with the sidecar", () => {
+test("the stored header assets are committed under render/assets/email", () => {
   const dir = fileURLToPath(new URL("../assets/email/", import.meta.url));
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
   for (const name of ["steward-email-header-2x.png", "steward-email-mark-2x.png"]) {

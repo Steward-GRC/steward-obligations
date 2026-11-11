@@ -12,7 +12,7 @@ export interface MfaSetupProperties extends ChromeProperties {
 }
 
 const MfaSetup = ({ email, name, setupUrl, ...chrome }: MfaSetupProperties) => (
-  <NotificationLayout {...chrome} previewText="Set up multi-factor authentication">
+  <NotificationLayout {...chrome} notice="security" previewText="Set up multi-factor authentication">
     <EmailHero eyebrow="Security" title="Set up multi-factor authentication" />
     <EmailText>Hi {name ?? email},</EmailText>
     <EmailText>

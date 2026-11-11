@@ -41,8 +41,8 @@ const PolicyPublished = ({
   return (
     <NotificationLayout
       {...chrome}
+      notice="required"
       preferencesUrl={preferencesUrl}
-      required
       previewText={`New policy published: ${policyTitle}`}
     >
       <EmailHero eyebrow="Policy published" title={policyTitle} />

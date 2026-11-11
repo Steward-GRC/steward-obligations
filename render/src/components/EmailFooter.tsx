@@ -8,8 +8,10 @@ import { DARK_CLASS, palette } from "./palette.js";
 export interface EmailFooterProperties {
   legalText?: string;
   preferencesUrl?: string;
-  // Compliance mail the recipient cannot turn off; says so before the link.
-  required?: boolean;
+  // What kind of mail this is. "security" mail has no opt-out at all and says
+  // why; "required" compliance mail keeps the preferences link but says it
+  // cannot be turned off. Unset is optional mail: links only, no notice.
+  notice?: "required" | "security";
   unsubscribeHref?: string;
 }
 
@@ -22,11 +24,11 @@ const SECURITY_NOTICE = "This is a security email, so you can't unsubscribe from
 const REQUIRED_NOTICE = "Required for auditability — you can't turn these off.";
 
 // A paper block: the organisation's postal address first, then the opt-out
-// line. Mail with no preferences link and no unsubscribe target is security or
-// transactional mail and says why it has neither.
-export const EmailFooter = ({ legalText, preferencesUrl, required = false, unsubscribeHref }: EmailFooterProperties) => {
-  const hasPreferences = present(preferencesUrl);
-  const hasUnsubscribe = present(unsubscribeHref);
+// line.
+export const EmailFooter = ({ legalText, notice, preferencesUrl, unsubscribeHref }: EmailFooterProperties) => {
+  const security = notice === "security";
+  const hasPreferences = !security && present(preferencesUrl);
+  const hasUnsubscribe = !security && present(unsubscribeHref);
   return (
     <Section
       className={DARK_CLASS.footer}
@@ -38,14 +40,14 @@ export const EmailFooter = ({ legalText, preferencesUrl, required = false, unsub
           {legalText}
         </Text>
       )}
-      {!hasPreferences && !hasUnsubscribe && (
+      {security && (
         <Text className={DARK_CLASS.muted} style={footerText}>
           {SECURITY_NOTICE}
         </Text>
       )}
-      {(hasPreferences || hasUnsubscribe) && (
+      {(hasPreferences || hasUnsubscribe || notice === "required") && (
         <Text className={DARK_CLASS.muted} style={footerText}>
-          {required && `${REQUIRED_NOTICE} `}
+          {notice === "required" && `${REQUIRED_NOTICE} `}
           {hasPreferences && (
             <Link className={DARK_CLASS.muted} href={preferencesUrl} style={footerLink}>
               Manage email preferences

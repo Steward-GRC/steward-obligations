@@ -8,7 +8,7 @@ import { DARK_CLASS, fontStack, headingFontStack, palette, RADIUS } from "./pale
 export interface EmailHeaderProperties {
   // The adopter's own logo, shown in the slot on the right.
   logoSrc?: string;
-  // The Steward mark PNG for the paper tile; the tile stays empty without it.
+  // The Steward mark PNG for the paper tile; without it there is no tile.
   markSrc?: string;
   organisationName?: string;
   productName?: string;
@@ -31,19 +31,19 @@ export const EmailHeader = ({ logoSrc, markSrc, organisationName, productName = 
       style={{ borderBottom: `1px solid ${palette.border}`, padding: "16px 24px" }}
     >
       <Row>
-        <Column style={{ verticalAlign: "middle", width: "28px" }}>
-          <div
-            data-email-tile=""
-            style={{
-              backgroundColor: "#F8F4EE",
-              borderRadius: RADIUS,
-              height: "28px",
-              lineHeight: "28px",
-              textAlign: "center",
-              width: "28px",
-            }}
-          >
-            {present(markSrc) && (
+        {present(markSrc) && (
+          <Column style={{ verticalAlign: "middle", width: "28px" }}>
+            <div
+              data-email-tile=""
+              style={{
+                backgroundColor: "#F8F4EE",
+                borderRadius: RADIUS,
+                height: "28px",
+                lineHeight: "28px",
+                textAlign: "center",
+                width: "28px",
+              }}
+            >
               <Img
                 alt=""
                 height="20"
@@ -51,10 +51,10 @@ export const EmailHeader = ({ logoSrc, markSrc, organisationName, productName = 
                 style={{ display: "inline-block", margin: "4px", verticalAlign: "top" }}
                 width="20"
               />
-            )}
-          </div>
-        </Column>
-        <Column style={{ paddingLeft: "10px", verticalAlign: "middle" }}>
+            </div>
+          </Column>
+        )}
+        <Column style={{ paddingLeft: present(markSrc) ? "10px" : "0", verticalAlign: "middle" }}>
           <Text
             className={DARK_CLASS.text}
             data-email-wordmark=""
