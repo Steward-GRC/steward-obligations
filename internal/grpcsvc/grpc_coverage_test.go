@@ -62,6 +62,11 @@ func coverageCases() []coverageCase {
 			interfaceType: reflect.TypeFor[obligationsv1.WelcomeServiceServer](),
 			zeroHandler:   &WelcomeHandler{},
 		},
+		{
+			name:          "InboxService",
+			interfaceType: reflect.TypeFor[obligationsv1.InboxServiceServer](),
+			zeroHandler:   &InboxHandler{},
+		},
 	}
 }
 
