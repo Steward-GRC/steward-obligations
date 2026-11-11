@@ -148,6 +148,17 @@ func (a *CoreAdapter) PolicyIDForVersion(ctx context.Context, policyVersionID st
 	return resp.GetVersion().GetPolicyId(), nil
 }
 
+// VersionRef returns the owning policy ID and the version number of a
+// policyVersionID via core's GetPolicyVersion. An unknown version answers an
+// empty policy ID.
+func (a *CoreAdapter) VersionRef(ctx context.Context, policyVersionID string) (string, int32, error) {
+	resp, err := a.client.GetPolicyVersion(ctx, &corev1.GetPolicyVersionRequest{Id: policyVersionID})
+	if err != nil {
+		return "", 0, err
+	}
+	return resp.GetVersion().GetPolicyId(), resp.GetVersion().GetVersionNo(), nil
+}
+
 // VersionPublishedAt returns the publish timestamp for a policy version, the
 // baseline for avg-days-to-ack. Zero time if the version is not yet published.
 func (a *CoreAdapter) VersionPublishedAt(ctx context.Context, policyVersionID string) (time.Time, error) {

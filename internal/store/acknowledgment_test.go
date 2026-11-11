@@ -309,3 +309,39 @@ func TestAcknowledgmentStore_AckedAtAndDaily(t *testing.T) {
 		t.Fatalf("DailyAckCounts total: got %d want 2 (%v)", total, daily)
 	}
 }
+
+func TestRecentAcks(t *testing.T) {
+	pool := newTestDB(t)
+	as := store.NewAcknowledgmentStore(pool)
+	ctx := context.Background()
+
+	userID := "cccccccc-0000-0000-0000-0000000000a1"
+	other := "cccccccc-0000-0000-0000-0000000000a2"
+	pvOld := "dddddddd-0000-0000-0000-0000000000a1"
+	pvMid := "dddddddd-0000-0000-0000-0000000000a2"
+	pvNew := "dddddddd-0000-0000-0000-0000000000a3"
+	base := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	insertAckAt(t, pool, userID, pvOld, base)
+	insertAckAt(t, pool, userID, pvNew, base.Add(48*time.Hour))
+	insertAckAt(t, pool, userID, pvMid, base.Add(24*time.Hour))
+	insertAckAt(t, pool, other, pvNew, base.Add(72*time.Hour))
+
+	got, err := as.RecentAcks(ctx, userID, 2)
+	if err != nil {
+		t.Fatalf("RecentAcks: %v", err)
+	}
+	if len(got) != 2 || got[0].PolicyVersionID != pvNew || got[1].PolicyVersionID != pvMid {
+		t.Fatalf("want newest first limited to [new mid] for the caller only, got %+v", got)
+	}
+	if !got[0].AckedAt.Equal(base.Add(48 * time.Hour)) {
+		t.Errorf("AckedAt: got %v", got[0].AckedAt)
+	}
+
+	none, err := as.RecentAcks(ctx, "cccccccc-0000-0000-0000-0000000000ff", 5)
+	if err != nil {
+		t.Fatalf("RecentAcks (none): %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("want empty for someone who acknowledged nothing, got %+v", none)
+	}
+}
