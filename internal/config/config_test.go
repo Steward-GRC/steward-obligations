@@ -132,3 +132,25 @@ func TestLoadLeavesTheEmailDesignSettingsEmptyByDefault(t *testing.T) {
 	require.Empty(t, cfg.EmailOrganisationName)
 	require.Empty(t, cfg.EmailMarkSrc)
 }
+
+func TestLoadReadsTheAckDueDays(t *testing.T) {
+	required(t)
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.Equal(t, 14, cfg.AckDueDays, "default")
+
+	t.Setenv("ACK_DUE_DAYS", "30")
+	cfg, err = config.Load()
+	require.NoError(t, err)
+	require.Equal(t, 30, cfg.AckDueDays)
+
+	t.Setenv("ACK_DUE_DAYS", "0")
+	cfg, err = config.Load()
+	require.NoError(t, err)
+	require.Equal(t, 0, cfg.AckDueDays, "zero turns due dates off")
+
+	t.Setenv("ACK_DUE_DAYS", "-3")
+	cfg, err = config.Load()
+	require.NoError(t, err)
+	require.Equal(t, 14, cfg.AckDueDays, "a negative value falls back to the default")
+}

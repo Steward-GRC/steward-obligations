@@ -194,7 +194,7 @@ func run(ctx context.Context, lg log.Logger, logger zerolog.Logger) error {
 	resolver := obligation.NewResolver(cachedCore,
 		obligation.NewIdentityAdapter(identityv1.NewIdentityReadServiceClient(identityConn)),
 		obligation.NewChainAdapter(corev1.NewCategoryServiceClient(coreConn)),
-		ackRowStore, policyViewStore)
+		ackRowStore, policyViewStore).WithAckDueDays(cfg.AckDueDays)
 
 	identityClient := &identityGRPCAdapter{client: identityv1.NewIdentityReadServiceClient(identityConn)}
 	// One resolver backs both the sender's suppress hook and the dispatcher,

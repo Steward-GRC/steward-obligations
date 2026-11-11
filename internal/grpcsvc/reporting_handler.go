@@ -56,7 +56,7 @@ func (h *ReportingHandler) GetCompletionReport(ctx context.Context, req *obligat
 
 	overdue := make([]*obligationsv1.OverdueEntry, len(overdueUsers))
 	for i, u := range overdueUsers {
-		overdue[i] = &obligationsv1.OverdueEntry{UserId: u.ID, Email: u.Email}
+		overdue[i] = &obligationsv1.OverdueEntry{UserId: u.ID, Email: u.Email, DueAt: timestampOrNil(u.DueAt)}
 	}
 
 	avgDays, viewedNotAcked, err := h.resolver.CompletionMetrics(ctx, req.GetPolicyVersionId(), req.GetGroupId())
@@ -102,7 +102,7 @@ func (h *ReportingHandler) GetAckRoster(ctx context.Context, req *obligationsv1.
 		out.Acked[i] = entry
 	}
 	for i, u := range pending {
-		out.Pending[i] = &obligationsv1.AckRosterEntry{UserId: u.ID, Email: u.Email}
+		out.Pending[i] = &obligationsv1.AckRosterEntry{UserId: u.ID, Email: u.Email, DueAt: timestampOrNil(u.DueAt)}
 	}
 	return out, nil
 }

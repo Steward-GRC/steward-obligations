@@ -73,6 +73,9 @@ type ObligationItem struct {
 	Title           string
 	VersionNo       int32
 	PolicyVersionID string
+	// DueAt is when the acknowledgement is due: the version's publish time plus
+	// the configured days. Zero when core has no publish time or due dates are off.
+	DueAt time.Time
 }
 
 // RecentAckItem is one acknowledgement the user recorded, named by its policy.
@@ -146,6 +149,9 @@ type PolicyObligation struct {
 type User struct {
 	ID    string
 	Email string
+	// DueAt is set by Completion (overdue) and Roster (pending) to when the
+	// person's acknowledgement is due; zero when none applies.
+	DueAt time.Time
 }
 
 // ---------------------------------------------------------------------------
@@ -255,12 +261,46 @@ type Resolver struct {
 	chains categoryChains
 	acks   acksStore
 	views  viewsStore
+	// ackDueDays is the days after publish an acknowledgement is due; 0 means
+	// no due date.
+	ackDueDays int
 }
+
+// DefaultAckDueDays is how long after publish an acknowledgement is due when
+// WithAckDueDays is never called.
+const DefaultAckDueDays = 14
 
 // NewResolver constructs a Resolver. views is satisfied by *store.PolicyViewStore.
 // chains is satisfied by a ChainAdapter wrapping the group-service client.
 func NewResolver(core coreObligations, idn identityUsers, chains categoryChains, acks acksStore, views viewsStore) *Resolver {
-	return &Resolver{core: core, idn: idn, chains: chains, acks: acks, views: views}
+	return &Resolver{core: core, idn: idn, chains: chains, acks: acks, views: views, ackDueDays: DefaultAckDueDays}
+}
+
+// WithAckDueDays sets how many days after a version is published its
+// acknowledgement is due. Zero (or less) turns due dates off. It returns the
+// resolver so it chains off NewResolver.
+func (r *Resolver) WithAckDueDays(days int) *Resolver {
+	if days < 0 {
+		days = 0
+	}
+	r.ackDueDays = days
+	return r
+}
+
+// dueAt is the publish time of policyVersionID plus the configured days, or the
+// zero time when due dates are off or core has no publish time for the version.
+func (r *Resolver) dueAt(ctx context.Context, policyVersionID string) (time.Time, error) {
+	if r.ackDueDays == 0 {
+		return time.Time{}, nil
+	}
+	published, err := r.core.VersionPublishedAt(ctx, policyVersionID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if published.IsZero() {
+		return time.Time{}, nil
+	}
+	return published.AddDate(0, 0, r.ackDueDays), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -505,12 +545,17 @@ func (r *Resolver) MyObligations(ctx context.Context, userID string) ([]Obligati
 			continue
 		}
 
+		due, err := r.dueAt(ctx, p.PublishedVersionID)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, ObligationItem{
 			PolicyID:        p.PolicyID,
 			Number:          p.Number,
 			Title:           p.Title,
 			VersionNo:       p.VersionNo,
 			PolicyVersionID: p.PublishedVersionID,
+			DueAt:           due,
 		})
 	}
 	return out, nil
@@ -745,9 +790,15 @@ func (r *Resolver) Completion(ctx context.Context, policyVersionID, groupID stri
 		ackedSet[id] = struct{}{}
 	}
 
-	// 4. Overdue = audience members who have not acked.
+	// 4. Overdue = audience members who have not acked, each with the date
+	// the version's acknowledgement is due.
+	due, err := r.dueAt(ctx, policyVersionID)
+	if err != nil {
+		return 0, 0, nil, err
+	}
 	for _, u := range audience {
 		if _, ok := ackedSet[u.ID]; !ok {
+			u.DueAt = due
 			overdue = append(overdue, u)
 		}
 	}
@@ -870,10 +921,15 @@ func (r *Resolver) Roster(ctx context.Context, policyVersionID, groupID string) 
 	if err != nil {
 		return nil, nil, err
 	}
+	due, err := r.dueAt(ctx, policyVersionID)
+	if err != nil {
+		return nil, nil, err
+	}
 	for _, u := range audience {
 		if t, ok := at[u.ID]; ok {
 			acked = append(acked, RosterEntry{ID: u.ID, Email: u.Email, AckedAt: t})
 		} else {
+			u.DueAt = due
 			pending = append(pending, u)
 		}
 	}

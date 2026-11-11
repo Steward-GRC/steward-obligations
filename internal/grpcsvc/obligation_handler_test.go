@@ -157,3 +157,22 @@ func TestListMyAcknowledgments(t *testing.T) {
 		t.Errorf("unexpected item: %+v", got)
 	}
 }
+
+func TestGetMyObligations_DueAt(t *testing.T) {
+	due := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
+	backend := &fakeObligationBackend{myObligations: []obligation.ObligationItem{
+		{PolicyID: "p1", PolicyVersionID: "v1", DueAt: due},
+		{PolicyID: "p2", PolicyVersionID: "v2"},
+	}}
+	client := startObligationTestServer(t, backend)
+	resp, err := client.GetMyObligations(context.Background(), &obligationsv1.GetMyObligationsRequest{UserId: "u1"})
+	if err != nil {
+		t.Fatalf("GetMyObligations: %v", err)
+	}
+	if got := resp.GetObligations()[0].GetDueAt(); got == nil || !got.AsTime().Equal(due) {
+		t.Errorf("due_at: want %v, got %v", due, got)
+	}
+	if resp.GetObligations()[1].GetDueAt() != nil {
+		t.Errorf("an obligation with no due date must leave due_at unset, got %v", resp.GetObligations()[1].GetDueAt())
+	}
+}
