@@ -120,6 +120,11 @@ service NotifPrefService {
   rpc SetCategoryCadence(SetCategoryCadenceRequest) returns (SetCategoryCadenceResponse);
   rpc SetTypeCadence(SetTypeCadenceRequest) returns (SetTypeCadenceResponse);
   rpc SetDigestWindow(SetDigestWindowRequest) returns (SetDigestWindowResponse);
+
+  // Per-user quiet hours: a window in which email and push are held. In-app
+  // and mandatory notices are never held, and a held message is not sent later.
+  rpc GetQuietHours(GetQuietHoursRequest) returns (GetQuietHoursResponse);
+  rpc SetQuietHours(SetQuietHoursRequest) returns (SetQuietHoursResponse);
 }
 
 message UpsertNotifPrefRequest {
@@ -175,4 +180,34 @@ message SetDigestWindowRequest {
 }
 message SetDigestWindowResponse {
   NotificationSettings settings = 1;
+}
+
+// QuietHours is a daily window of local hours, [start, end), in an IANA
+// timezone. It may cross midnight (start 22, end 7).
+message QuietHours {
+  int32 start = 1;
+  int32 end = 2;
+  string timezone = 3;
+}
+
+message GetQuietHoursRequest {
+  string user_id = 1;
+}
+// quiet_hours is unset when the user has no window stored (the default
+// 22:00 to 07:00 applies).
+message GetQuietHoursResponse {
+  QuietHours quiet_hours = 1;
+}
+
+// SetQuietHours stores the window. Neither start nor end set clears it; one
+// without the other, an hour outside 0 to 23, start equal to end or an unknown
+// timezone is NOTIFY_PREF_INVALID. An empty timezone means UTC.
+message SetQuietHoursRequest {
+  string user_id = 1;
+  optional int32 start = 2;
+  optional int32 end = 3;
+  string timezone = 4;
+}
+message SetQuietHoursResponse {
+  QuietHours quiet_hours = 1;
 }

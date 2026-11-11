@@ -32,11 +32,19 @@ type NotifSettingsService interface {
 	SetDigestWindow(ctx context.Context, userID string, dailyHour, weeklyDow int) (notifprefs.Settings, error)
 }
 
+// QuietHoursService is the read/write model behind GetQuietHours and
+// SetQuietHours. *notifprefs.QuietService satisfies it in production.
+type QuietHoursService interface {
+	Get(ctx context.Context, userID string) (store.QuietWindow, bool, error)
+	Set(ctx context.Context, userID string, start, end *int, timezone string) (store.QuietWindow, bool, error)
+}
+
 // NotifPrefHandler implements obligationsv1.NotifPrefServiceServer.
 type NotifPrefHandler struct {
 	obligationsv1.UnimplementedNotifPrefServiceServer
 	backend  NotifPrefBackend
 	settings NotifSettingsService
+	quiet    QuietHoursService
 }
 
 // NewNotifPrefHandler returns a handler that delegates to the supplied backend.
@@ -51,6 +59,51 @@ func NewNotifPrefHandler(b NotifPrefBackend) *NotifPrefHandler {
 func (h *NotifPrefHandler) WithSettings(s NotifSettingsService) *NotifPrefHandler {
 	h.settings = s
 	return h
+}
+
+// WithQuietHours wires the quiet-hours service behind GetQuietHours and
+// SetQuietHours. Returns the receiver for fluent construction.
+func (h *NotifPrefHandler) WithQuietHours(q QuietHoursService) *NotifPrefHandler {
+	h.quiet = q
+	return h
+}
+
+// GetQuietHours returns the user's quiet-hours window, unset when none is stored.
+func (h *NotifPrefHandler) GetQuietHours(ctx context.Context, req *obligationsv1.GetQuietHoursRequest) (*obligationsv1.GetQuietHoursResponse, error) {
+	w, found, err := h.quiet.Get(ctx, req.GetUserId())
+	if err != nil {
+		return nil, storeUnavailable(ctx, "get_quiet_hours", err)
+	}
+	return &obligationsv1.GetQuietHoursResponse{QuietHours: quietToProto(w, found)}, nil
+}
+
+// SetQuietHours stores or clears the window. An invalid window is a coded
+// InvalidArgument (NOTIFY_PREF_INVALID).
+func (h *NotifPrefHandler) SetQuietHours(ctx context.Context, req *obligationsv1.SetQuietHoursRequest) (*obligationsv1.SetQuietHoursResponse, error) {
+	var start, end *int
+	if req.Start != nil {
+		v := int(req.GetStart())
+		start = &v
+	}
+	if req.End != nil {
+		v := int(req.GetEnd())
+		end = &v
+	}
+	w, found, err := h.quiet.Set(ctx, req.GetUserId(), start, end, req.GetTimezone())
+	if err != nil {
+		if errors.Is(err, notifprefs.ErrBadQuietHours) {
+			return nil, errcodes.Error(ctx, errcodes.PrefInvalid("quiet_hours", err))
+		}
+		return nil, storeUnavailable(ctx, "set_quiet_hours", err)
+	}
+	return &obligationsv1.SetQuietHoursResponse{QuietHours: quietToProto(w, found)}, nil
+}
+
+func quietToProto(w store.QuietWindow, found bool) *obligationsv1.QuietHours {
+	if !found {
+		return nil
+	}
+	return &obligationsv1.QuietHours{Start: toInt32(w.Start), End: toInt32(w.End), Timezone: w.Timezone}
 }
 
 // UpsertNotifPref inserts or replaces a user's per-channel notification

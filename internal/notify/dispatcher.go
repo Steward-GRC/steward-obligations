@@ -4,8 +4,9 @@
 // Package notify owns the WRITE half of the notification delivery layer: it
 // fans out user-targeted notifications across email, in-app, and push channels.
 //
-// Quiet hours (22:00–07:00 in the user's local timezone) suppress email and
-// push but never in-app, which always lands in the user's notification inbox.
+// Quiet hours (the user's own window, else 22:00–07:00 in their local
+// timezone) suppress email and push but never in-app, which always lands in the
+// user's notification inbox. Nothing is deferred or sent late.
 // The TZResolver is optional; when absent or returning an error the
 // dispatcher falls back to UTC.
 package notify
@@ -102,12 +103,19 @@ type TZResolver interface {
 	ResolveTimezone(ctx context.Context, userID string) (string, error)
 }
 
-// QuietHours determines whether "now", in a user's local timezone, falls in
-// the 22:00-07:00 window that suppresses email and push notifications (but
-// never in-app). Both the Dispatcher below and internal/mail's Suppress
-// middleware (send-time backstop, which needs the identical rule to
-// avoid drifting from the dispatcher's own gate) share this one type instead
-// of each defining their own version of "quiet hours".
+// WindowReader reads a person's own quiet-hours window. found is false when
+// none is stored. *store.NotificationQuietHoursStore satisfies it.
+type WindowReader interface {
+	Get(ctx context.Context, userID string) (w store.QuietWindow, found bool, err error)
+}
+
+// QuietHours determines whether "now" falls in the window that suppresses email
+// and push notifications (but never in-app): the person's own stored window
+// when they chose one, else 22:00-07:00 in their local timezone. Both the
+// Dispatcher below and internal/mail's Suppress middleware (send-time backstop,
+// which needs the identical rule to avoid drifting from the dispatcher's own
+// gate) share this one type instead of each defining their own version of
+// "quiet hours". Nothing is deferred: a held email or push is not sent later.
 type QuietHours struct {
 	// Resolver looks up a user's IANA timezone; nil, an error, or a blank
 	// result all fall back to UTC.
@@ -121,17 +129,49 @@ type QuietHours struct {
 	// time.Now. This lets a test pin a UTC instant and assert that the same
 	// moment lands in/out of the window depending on the resolved local zone.
 	NowFn func() time.Time
+	// Windows, when set, supplies the person's own window. No stored window, or
+	// a failed lookup, keeps the default 22:00-07:00.
+	Windows WindowReader
 }
 
-// InWindow reports whether userID is currently in the 22:00-07:00 quiet
-// window.
+// defaultQuiet is the window used when a person has chosen none.
+var defaultQuiet = store.QuietWindow{Start: 22, End: 7}
+
+// within reports whether hour is in [w.Start, w.End), crossing midnight when
+// Start > End.
+func within(w store.QuietWindow, hour int) bool {
+	if w.Start < w.End {
+		return hour >= w.Start && hour < w.End
+	}
+	return hour >= w.Start || hour < w.End
+}
+
+// InWindow reports whether userID is currently in their quiet window.
 func (q QuietHours) InWindow(ctx context.Context, userID string) bool {
+	logger := logctx.From(ctx)
+	win, stored := defaultQuiet, false
+	if q.Windows != nil {
+		w, found, err := q.Windows.Get(ctx, userID)
+		switch {
+		case err != nil:
+			logger.Warn().Err(err).Str("user_id", userID).
+				Msg("notify: quiet-hours lookup failed; using the default window")
+		case found:
+			win, stored = w, true
+		}
+	}
 	if q.HourFn != nil {
-		h := q.HourFn()
-		return h >= 22 || h < 7
+		return within(win, q.HourFn())
 	}
 	loc := time.UTC
-	if q.Resolver != nil {
+	if stored {
+		if l, err := time.LoadLocation(win.Timezone); err == nil {
+			loc = l
+		} else {
+			logger.Warn().Err(err).Str("user_id", userID).
+				Msg("notify: stored quiet-hours timezone unknown; reading the hour in UTC")
+		}
+	} else if q.Resolver != nil {
 		if tzName, err := q.Resolver.ResolveTimezone(ctx, userID); err == nil && tzName != "" {
 			if l, err := time.LoadLocation(tzName); err == nil {
 				loc = l
@@ -143,7 +183,9 @@ func (q QuietHours) InWindow(ctx context.Context, userID string) bool {
 		now = q.NowFn
 	}
 	h := now().In(loc).Hour()
-	return h >= 22 || h < 7
+	logger.Trace().Str("user_id", userID).Int("hour", h).Bool("stored_window", stored).
+		Msg("notify: quiet-hours check")
+	return within(win, h)
 }
 
 // Dispatcher fans notifications to every channel a user has enabled. Quiet
@@ -231,6 +273,22 @@ func (d *Dispatcher) WithOutbox(w BatchWriter) *Dispatcher {
 func (d *Dispatcher) WithTZResolver(r TZResolver) *Dispatcher {
 	d2 := *d
 	d2.quietHours.Resolver = r
+	return &d2
+}
+
+// WithQuietWindows returns a copy of the dispatcher that reads each person's
+// own quiet-hours window from r, keeping 22:00-07:00 for anyone without one.
+func (d *Dispatcher) WithQuietWindows(r WindowReader) *Dispatcher {
+	d2 := *d
+	d2.quietHours.Windows = r
+	return &d2
+}
+
+// WithNow returns a copy of the dispatcher with an injected clock; tests use it
+// to pin the instant while the timezone is still resolved.
+func (d *Dispatcher) WithNow(now func() time.Time) *Dispatcher {
+	d2 := *d
+	d2.quietHours.NowFn = now
 	return &d2
 }
 
