@@ -49,6 +49,9 @@ type fakeCore struct {
 	// docTypeErr, when non-nil, is returned by PolicyDocumentType to exercise the
 	// fail-loud path (an errored lookup must propagate, never default to policy).
 	docTypeErr error
+	// publishedAt maps policyVersionID -> publish time (VersionPublishedAt); an
+	// absent entry is the zero time, as core answers for an unpublished version.
+	publishedAt map[string]time.Time
 }
 
 func (f *fakeCore) PolicySensitivity(ctx context.Context, policyID string) (bool, error) {
@@ -97,7 +100,7 @@ func (f *fakeCore) VersionRef(ctx context.Context, policyVersionID string) (stri
 }
 
 func (f *fakeCore) VersionPublishedAt(ctx context.Context, policyVersionID string) (time.Time, error) {
-	return time.Time{}, nil
+	return f.publishedAt[policyVersionID], nil
 }
 
 func (f *fakeCore) ListPolicyVersionIDs(ctx context.Context, policyID string) ([]string, error) {
@@ -160,6 +163,7 @@ type fakeAcks struct {
 	acked      map[string]map[string]bool // userID -> versionID -> bool
 	ackedUsers map[string][]string        // policyVersionID -> []userID
 	recent     map[string][]store.RecentAck
+	ackedAt    map[string]time.Time // userID -> ack time (AckedAtForVersion)
 }
 
 func (f *fakeAcks) RecentAcks(ctx context.Context, userID string, limit int) ([]store.RecentAck, error) {
@@ -193,7 +197,7 @@ func (f *fakeAcks) AckedUserIDsForVersion(ctx context.Context, policyVersionID s
 }
 
 func (f *fakeAcks) AckedAtForVersion(ctx context.Context, policyVersionID string) (map[string]time.Time, error) {
-	return nil, nil
+	return f.ackedAt, nil
 }
 
 func (f *fakeAcks) DailyAckCounts(ctx context.Context, policyVersionID string, since time.Time) (map[string]int, error) {

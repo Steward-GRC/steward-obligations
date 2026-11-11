@@ -73,3 +73,4 @@ A missing setting, a plain-http issuer or a malformed allow-list entry stops the
 | `NEW_USER_ACK_THROTTLE_ENABLED`, `NEW_USER_ACK_GRACE_HOURS` | `false`, `24` | Holds a new account's first reminders back for the grace period. |
 | `SCHEDULER_ENABLED`, `SCHEDULER_TICK_SEC` | `true`, `900` | The reminder sweep and digest drain; one replica runs each tick. |
 | `ESCALATION_AFTER_DAYS` | `30` | When an unacknowledged obligation is escalated. |
+| `ACK_DUE_DAYS` | `14` | Days after a version is published that its acknowledgement is due; shown as the due date on My work and the completion roster. `0` turns due dates off. Reminders and escalation do not use it. |

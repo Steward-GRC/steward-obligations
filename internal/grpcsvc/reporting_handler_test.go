@@ -19,13 +19,17 @@ import (
 	"github.com/Steward-GRC/steward-obligations/internal/reporting"
 )
 
+// fakeDue is the due time the fake resolver gives the people who have not
+// acknowledged.
+var fakeDue = time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
+
 // fakeCompletionResolver fakes the completionResolver interface.
 // It returns fixed total/acked/overdue values for testing.
 type fakeCompletionResolver struct{}
 
 func (f *fakeCompletionResolver) Completion(_ context.Context, _, _ string) (int, int, []obligation.User, error) {
 	return 5, 3, []obligation.User{
-		{ID: "u1", Email: "u1@example.com"},
+		{ID: "u1", Email: "u1@example.com", DueAt: fakeDue},
 		{ID: "u2", Email: "u2@example.com"},
 	}, nil
 }
@@ -35,7 +39,7 @@ func (f *fakeCompletionResolver) CompletionMetrics(_ context.Context, _, _ strin
 }
 func (f *fakeCompletionResolver) Roster(_ context.Context, _, _ string) ([]obligation.RosterEntry, []obligation.User, error) {
 	return []obligation.RosterEntry{{ID: "u1", Email: "u1@example.org", AckedAt: time.Unix(1, 0)}},
-		[]obligation.User{{ID: "u2", Email: "u2@example.org"}}, nil
+		[]obligation.User{{ID: "u2", Email: "u2@example.org", DueAt: fakeDue}}, nil
 }
 func (f *fakeCompletionResolver) Activity(_ context.Context, _, _ string, days int) ([]obligation.ActivityDay, error) {
 	return []obligation.ActivityDay{{Date: "2026-06-10", Acks: 1, Views: 2}}, nil
@@ -162,5 +166,33 @@ func TestGetCompletionReport_Metrics(t *testing.T) {
 	}
 	if resp.GetViewedNotAckedCount() != 1 {
 		t.Fatalf("vna: %d", resp.GetViewedNotAckedCount())
+	}
+}
+
+func TestGetAckRoster_DueAtOnPendingOnly(t *testing.T) {
+	client := startReportingTestServer(t)
+	resp, err := client.GetAckRoster(context.Background(), &obligationsv1.GetAckRosterRequest{PolicyVersionId: "pv1"})
+	if err != nil {
+		t.Fatalf("GetAckRoster: %v", err)
+	}
+	if got := resp.GetPending()[0].GetDueAt(); got == nil || !got.AsTime().Equal(fakeDue) {
+		t.Errorf("pending due_at: want %v, got %v", fakeDue, got)
+	}
+	if resp.GetAcked()[0].GetDueAt() != nil {
+		t.Errorf("acked entry must carry no due_at, got %v", resp.GetAcked()[0].GetDueAt())
+	}
+}
+
+func TestGetCompletionReport_OverdueCarriesDueAt(t *testing.T) {
+	client := startReportingTestServer(t)
+	resp, err := client.GetCompletionReport(context.Background(), &obligationsv1.GetCompletionReportRequest{PolicyVersionId: "pv1"})
+	if err != nil {
+		t.Fatalf("GetCompletionReport: %v", err)
+	}
+	if got := resp.GetOverdue()[0].GetDueAt(); got == nil || !got.AsTime().Equal(fakeDue) {
+		t.Errorf("overdue[0] due_at: want %v, got %v", fakeDue, got)
+	}
+	if resp.GetOverdue()[1].GetDueAt() != nil {
+		t.Errorf("overdue[1] has no due date, got %v", resp.GetOverdue()[1].GetDueAt())
 	}
 }

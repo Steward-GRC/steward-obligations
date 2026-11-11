@@ -48,6 +48,7 @@ func (h *ObligationHandler) GetMyObligations(ctx context.Context, req *obligatio
 			Title:           item.Title,
 			VersionNo:       item.VersionNo,
 			PolicyVersionId: item.PolicyVersionID,
+			DueAt:           timestampOrNil(item.DueAt),
 		}
 	}
 	return &obligationsv1.GetMyObligationsResponse{Obligations: protoItems}, nil
