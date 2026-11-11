@@ -13,3 +13,6 @@ the caller; every other code is sent as `Code N: Internal Error`.
 | 7004 | `NOTIFY_PREF_MANDATORY_OFF` | notification preferences | a cadence write tried to turn off a mandatory category or type; category names it | yes |
 | 7005 | `NOTIFY_PREF_INVALID` | notification preferences | a cadence write carried an unknown category, cadence or kind, or a digest window out of range; field names it | yes |
 | 7006 | `ACK_TRANSFER_ACTOR_REQUIRED` | transfer acknowledgements | a real (not dry-run) transfer named no actor_user_id, so its audit event would name nobody | no |
+| 7007 | `INBOX_AUTH_REQUIRED` | notification inbox | an inbox call ran without a forwarded actor to scope it to | yes |
+| 7008 | `INBOX_NOTICE_NOT_FOUND` | notification inbox | MarkRead named a notice the actor does not have: it does not exist or is someone else's; the two are not told apart | yes |
+| 7009 | `INBOX_PAGE_INVALID` | notification inbox | ListNotices carried a page token this service did not issue, or a filter it does not know | yes |

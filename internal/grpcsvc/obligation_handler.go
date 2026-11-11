@@ -6,6 +6,8 @@ package grpcsvc
 import (
 	"context"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	obligationsv1 "github.com/Steward-GRC/steward-obligations/gen/go/steward/obligations/v1"
 	"github.com/Steward-GRC/steward-obligations/internal/obligation"
 )
@@ -17,6 +19,7 @@ type ObligationBackend interface {
 	MyObligations(ctx context.Context, userID string) ([]obligation.ObligationItem, error)
 	MyAckSummary(ctx context.Context, userID string) (required int32, done int32, err error)
 	ObligatedAudienceCount(ctx context.Context, policyID string) (int32, error)
+	MyRecentAcks(ctx context.Context, userID string, limit int32) ([]obligation.RecentAckItem, error)
 }
 
 // ObligationHandler implements obligationsv1.ObligationServiceServer.
@@ -45,9 +48,31 @@ func (h *ObligationHandler) GetMyObligations(ctx context.Context, req *obligatio
 			Title:           item.Title,
 			VersionNo:       item.VersionNo,
 			PolicyVersionId: item.PolicyVersionID,
+			DueAt:           timestampOrNil(item.DueAt),
 		}
 	}
 	return &obligationsv1.GetMyObligationsResponse{Obligations: protoItems}, nil
+}
+
+// ListMyAcknowledgments returns the requested person's recent acknowledgements,
+// newest first.
+func (h *ObligationHandler) ListMyAcknowledgments(ctx context.Context, req *obligationsv1.ListMyAcknowledgmentsRequest) (*obligationsv1.ListMyAcknowledgmentsResponse, error) {
+	items, err := h.resolver.MyRecentAcks(ctx, req.GetUserId(), req.GetLimit())
+	if err != nil {
+		return nil, storeUnavailable(ctx, "list_my_acknowledgments", err)
+	}
+	out := make([]*obligationsv1.AcknowledgmentItem, len(items))
+	for i, it := range items {
+		out[i] = &obligationsv1.AcknowledgmentItem{
+			PolicyId:        it.PolicyID,
+			Number:          it.Number,
+			Title:           it.Title,
+			VersionNo:       it.VersionNo,
+			PolicyVersionId: it.PolicyVersionID,
+			AckedAt:         timestamppb.New(it.AckedAt),
+		}
+	}
+	return &obligationsv1.ListMyAcknowledgmentsResponse{Acknowledgments: out}, nil
 }
 
 // GetObligatedAudienceCount returns the count of users obligated to ack the

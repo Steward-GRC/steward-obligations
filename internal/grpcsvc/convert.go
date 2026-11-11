@@ -3,7 +3,21 @@
 
 package grpcsvc
 
-import "math"
+import (
+	"math"
+	"time"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+// timestampOrNil is the protobuf timestamp for t, or nil for the zero time so
+// an unset date stays unset on the wire.
+func timestampOrNil(t time.Time) *timestamppb.Timestamp {
+	if t.IsZero() {
+		return nil
+	}
+	return timestamppb.New(t)
+}
 
 // toInt32 converts a non-negative domain int (audience sizes, ack/view counts —
 // bounded far below int32 max by construction) to the int32 used by the

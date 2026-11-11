@@ -76,6 +76,10 @@ func (c *CachedCore) PolicyIDForVersion(ctx context.Context, policyVersionID str
 	return c.inner.PolicyIDForVersion(ctx, policyVersionID)
 }
 
+func (c *CachedCore) VersionRef(ctx context.Context, policyVersionID string) (string, int32, error) {
+	return c.inner.VersionRef(ctx, policyVersionID)
+}
+
 func (c *CachedCore) VersionPublishedAt(ctx context.Context, policyVersionID string) (time.Time, error) {
 	return c.inner.VersionPublishedAt(ctx, policyVersionID)
 }

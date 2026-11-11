@@ -81,6 +81,7 @@ message ObligationItem {
   string title = 3;
   int32 version_no = 4;
   string policy_version_id = 5;
+  google.protobuf.Timestamp due_at = 6; // publish time of policy_version_id plus the configured days; unset when none applies
 }
 message GetMyObligationsRequest {
   string user_id = 1;
@@ -103,8 +104,31 @@ message MyAckSummaryResponse {
   int32 done = 2;
 }
 
+// One acknowledgement the person recorded, named by its policy.
+message AcknowledgmentItem {
+  string policy_id = 1;
+  string number = 2;
+  string title = 3;
+  int32 version_no = 4;
+  string policy_version_id = 5;
+  google.protobuf.Timestamp acked_at = 6;
+}
+message ListMyAcknowledgmentsRequest {
+  string user_id = 1;
+  // limit caps the answer; 0 means the default of 10, and the most it will
+  // return is 100.
+  int32 limit = 2;
+}
+message ListMyAcknowledgmentsResponse {
+  // Newest first by acked_at. Only the requested person's acknowledgements.
+  repeated AcknowledgmentItem acknowledgments = 1;
+}
+
 service ObligationService {
   rpc GetMyObligations(GetMyObligationsRequest) returns (GetMyObligationsResponse);
+  // ListMyAcknowledgments answers the person's recent acknowledgements, newest
+  // first, for the "Recently acknowledged" card on My work.
+  rpc ListMyAcknowledgments(ListMyAcknowledgmentsRequest) returns (ListMyAcknowledgmentsResponse);
   rpc GetObligatedAudienceCount(GetObligatedAudienceCountRequest) returns (GetObligatedAudienceCountResponse);
   rpc MyAckSummary(MyAckSummaryRequest) returns (MyAckSummaryResponse);
 }

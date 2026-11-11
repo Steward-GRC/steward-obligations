@@ -7,6 +7,7 @@ import (
 	"context"
 	"net"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -23,6 +24,13 @@ type fakeObligationBackend struct {
 	obligatedAudienceCount int32
 	ackSummaryRequired     int32
 	ackSummaryDone         int32
+	recentAcks             []obligation.RecentAckItem
+	recentLimit            int32
+}
+
+func (f *fakeObligationBackend) MyRecentAcks(_ context.Context, _ string, limit int32) ([]obligation.RecentAckItem, error) {
+	f.recentLimit = limit
+	return f.recentAcks, nil
 }
 
 func (f *fakeObligationBackend) MyObligations(_ context.Context, _ string) ([]obligation.ObligationItem, error) {
@@ -123,5 +131,48 @@ func TestMyAckSummary(t *testing.T) {
 	}
 	if resp.GetDone() != 1 {
 		t.Errorf("Done: got %d, want 1", resp.GetDone())
+	}
+}
+
+func TestListMyAcknowledgments(t *testing.T) {
+	at := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
+	backend := &fakeObligationBackend{recentAcks: []obligation.RecentAckItem{
+		{PolicyID: "p1", Number: "POL-001", Title: "One", VersionNo: 2, PolicyVersionID: "v1b", AckedAt: at},
+	}}
+	client := startObligationTestServer(t, backend)
+
+	resp, err := client.ListMyAcknowledgments(context.Background(), &obligationsv1.ListMyAcknowledgmentsRequest{UserId: "u1", Limit: 5})
+	if err != nil {
+		t.Fatalf("ListMyAcknowledgments: %v", err)
+	}
+	if backend.recentLimit != 5 {
+		t.Errorf("limit passed through: got %d, want 5", backend.recentLimit)
+	}
+	if len(resp.GetAcknowledgments()) != 1 {
+		t.Fatalf("want 1 acknowledgment, got %d", len(resp.GetAcknowledgments()))
+	}
+	got := resp.GetAcknowledgments()[0]
+	if got.GetNumber() != "POL-001" || got.GetTitle() != "One" || got.GetVersionNo() != 2 ||
+		got.GetPolicyVersionId() != "v1b" || !got.GetAckedAt().AsTime().Equal(at) {
+		t.Errorf("unexpected item: %+v", got)
+	}
+}
+
+func TestGetMyObligations_DueAt(t *testing.T) {
+	due := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
+	backend := &fakeObligationBackend{myObligations: []obligation.ObligationItem{
+		{PolicyID: "p1", PolicyVersionID: "v1", DueAt: due},
+		{PolicyID: "p2", PolicyVersionID: "v2"},
+	}}
+	client := startObligationTestServer(t, backend)
+	resp, err := client.GetMyObligations(context.Background(), &obligationsv1.GetMyObligationsRequest{UserId: "u1"})
+	if err != nil {
+		t.Fatalf("GetMyObligations: %v", err)
+	}
+	if got := resp.GetObligations()[0].GetDueAt(); got == nil || !got.AsTime().Equal(due) {
+		t.Errorf("due_at: want %v, got %v", due, got)
+	}
+	if resp.GetObligations()[1].GetDueAt() != nil {
+		t.Errorf("an obligation with no due date must leave due_at unset, got %v", resp.GetObligations()[1].GetDueAt())
 	}
 }

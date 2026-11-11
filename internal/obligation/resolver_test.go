@@ -17,6 +17,7 @@ import (
 	"github.com/Steward-GRC/steward-obligations/internal/consumer"
 	"github.com/Steward-GRC/steward-obligations/internal/notify"
 	"github.com/Steward-GRC/steward-obligations/internal/obligation"
+	"github.com/Steward-GRC/steward-obligations/internal/store"
 )
 
 // ---------------------------------------------------------------------------
@@ -30,6 +31,8 @@ type fakeCore struct {
 	resolutions map[string]obligation.PolicyObligation
 	// versionToPolicy maps policyVersionID -> owning policyID (GetPolicyVersion)
 	versionToPolicy map[string]string
+	// versionNos maps policyVersionID -> version number (VersionRef)
+	versionNos map[string]int32
 	// policyVersions maps policyID -> version IDs (ListPolicyVersions)
 	policyVersions map[string][]string
 	// homeGroups maps policyID -> home group id (PolicyHomeGroup)
@@ -46,6 +49,9 @@ type fakeCore struct {
 	// docTypeErr, when non-nil, is returned by PolicyDocumentType to exercise the
 	// fail-loud path (an errored lookup must propagate, never default to policy).
 	docTypeErr error
+	// publishedAt maps policyVersionID -> publish time (VersionPublishedAt); an
+	// absent entry is the zero time, as core answers for an unpublished version.
+	publishedAt map[string]time.Time
 }
 
 func (f *fakeCore) PolicySensitivity(ctx context.Context, policyID string) (bool, error) {
@@ -89,8 +95,12 @@ func (f *fakeCore) PolicyIDForVersion(ctx context.Context, policyVersionID strin
 	return f.versionToPolicy[policyVersionID], nil
 }
 
+func (f *fakeCore) VersionRef(ctx context.Context, policyVersionID string) (string, int32, error) {
+	return f.versionToPolicy[policyVersionID], f.versionNos[policyVersionID], nil
+}
+
 func (f *fakeCore) VersionPublishedAt(ctx context.Context, policyVersionID string) (time.Time, error) {
-	return time.Time{}, nil
+	return f.publishedAt[policyVersionID], nil
 }
 
 func (f *fakeCore) ListPolicyVersionIDs(ctx context.Context, policyID string) ([]string, error) {
@@ -152,6 +162,16 @@ func (f *fakeChains) BuildCategoryChain(ctx context.Context, categoryID string) 
 type fakeAcks struct {
 	acked      map[string]map[string]bool // userID -> versionID -> bool
 	ackedUsers map[string][]string        // policyVersionID -> []userID
+	recent     map[string][]store.RecentAck
+	ackedAt    map[string]time.Time // userID -> ack time (AckedAtForVersion)
+}
+
+func (f *fakeAcks) RecentAcks(ctx context.Context, userID string, limit int) ([]store.RecentAck, error) {
+	out := f.recent[userID]
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (f *fakeAcks) Acked(ctx context.Context, userID string, versionIDs []string) (map[string]bool, error) {
@@ -177,7 +197,7 @@ func (f *fakeAcks) AckedUserIDsForVersion(ctx context.Context, policyVersionID s
 }
 
 func (f *fakeAcks) AckedAtForVersion(ctx context.Context, policyVersionID string) (map[string]time.Time, error) {
-	return nil, nil
+	return f.ackedAt, nil
 }
 
 func (f *fakeAcks) DailyAckCounts(ctx context.Context, policyVersionID string, since time.Time) (map[string]int, error) {
@@ -1334,6 +1354,9 @@ func (m *mCore) ListObligatingPolicies(context.Context) ([]obligation.Obligating
 func (m *mCore) ResolvePolicyObligation(context.Context, string) (obligation.PolicyObligation, error) {
 	return m.obl, nil
 }
+func (m *mCore) VersionRef(context.Context, string) (string, int32, error) {
+	return m.policyID, 1, nil
+}
 func (m *mCore) PolicyIDForVersion(context.Context, string) (string, error) { return m.policyID, nil }
 func (m *mCore) VersionPublishedAt(context.Context, string) (time.Time, error) {
 	return m.publishedAt, nil
@@ -1378,7 +1401,10 @@ func (m *mAcks) DailyAckCounts(context.Context, string, time.Time) (map[string]i
 	return m.daily, nil
 }
 func (m *mAcks) DeleteAcksForUsers(context.Context, string, []string) (int, error) { return 0, nil }
-func (m *mAcks) VersionsAckedByUser(context.Context, string) ([]string, error)     { return nil, nil }
+func (m *mAcks) RecentAcks(context.Context, string, int) ([]store.RecentAck, error) {
+	return nil, nil
+}
+func (m *mAcks) VersionsAckedByUser(context.Context, string) ([]string, error) { return nil, nil }
 
 // ---------------------------------------------------------------------------
 // PurgeOrphanedAcks / ReconcilePolicyAcks (obligation-removal purge)
@@ -1981,5 +2007,43 @@ func TestOutstandingObligationsAcrossUsers(t *testing.T) {
 	// A cleared pair must never appear.
 	if got["p1|u1"] || got["p2|u2"] {
 		t.Errorf("cleared obligation surfaced as outstanding: %+v", got)
+	}
+}
+
+// MyRecentAcks names each acknowledged policy by number, title and version,
+// newest first as the store returns them, and skips a version whose policy
+// core no longer knows.
+func TestMyRecentAcks(t *testing.T) {
+	at := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
+	core := &fakeCore{
+		versionToPolicy: map[string]string{"v2": "p2", "v1": "p1"},
+		versionNos:      map[string]int32{"v2": 3, "v1": 1},
+		policyNumbers:   map[string]string{"p1": "POL-001", "p2": "POL-002"},
+		policyTitles:    map[string]string{"p1": "One", "p2": "Two"},
+	}
+	acks := &fakeAcks{recent: map[string][]store.RecentAck{
+		"u1": {
+			{PolicyVersionID: "v2", AckedAt: at},
+			{PolicyVersionID: "gone", AckedAt: at.Add(-time.Hour)},
+			{PolicyVersionID: "v1", AckedAt: at.Add(-2 * time.Hour)},
+		},
+	}}
+	r := obligation.NewResolver(core, &fakeIdentity{}, &fakeChains{}, acks, nil)
+
+	got, err := r.MyRecentAcks(context.Background(), "u1", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []obligation.RecentAckItem{
+		{PolicyID: "p2", Number: "POL-002", Title: "Two", VersionNo: 3, PolicyVersionID: "v2", AckedAt: at},
+		{PolicyID: "p1", Number: "POL-001", Title: "One", VersionNo: 1, PolicyVersionID: "v1", AckedAt: at.Add(-2 * time.Hour)},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+
+	none, err := r.MyRecentAcks(context.Background(), "nobody", 10)
+	if err != nil || len(none) != 0 {
+		t.Fatalf("want empty and no error for someone with no acks, got %+v, %v", none, err)
 	}
 }

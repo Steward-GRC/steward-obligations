@@ -47,6 +47,8 @@ import (
 	"time"
 
 	authz "github.com/Steward-GRC/steward-authz"
+	"github.com/Steward-GRC/steward-obligations/internal/logctx"
+	"github.com/Steward-GRC/steward-obligations/internal/store"
 )
 
 // ---------------------------------------------------------------------------
@@ -71,6 +73,68 @@ type ObligationItem struct {
 	Title           string
 	VersionNo       int32
 	PolicyVersionID string
+	// DueAt is when the acknowledgement is due: the version's publish time plus
+	// the configured days. Zero when core has no publish time or due dates are off.
+	DueAt time.Time
+}
+
+// RecentAckItem is one acknowledgement the user recorded, named by its policy.
+type RecentAckItem struct {
+	PolicyID        string
+	Number          string
+	Title           string
+	VersionNo       int32
+	PolicyVersionID string
+	AckedAt         time.Time
+}
+
+const (
+	defaultRecentAcks = 10
+	maxRecentAcks     = 100
+)
+
+// MyRecentAcks returns the user's own acknowledgements, newest first, each named
+// by its policy number, title and version. limit <= 0 means the default of 10
+// and the answer never exceeds 100. An acknowledgement whose policy core no
+// longer knows is left out (logged), not an error.
+func (r *Resolver) MyRecentAcks(ctx context.Context, userID string, limit int32) ([]RecentAckItem, error) {
+	log := logctx.From(ctx)
+	n := int(limit)
+	if n <= 0 {
+		n = defaultRecentAcks
+	}
+	if n > maxRecentAcks {
+		n = maxRecentAcks
+	}
+	log.Debug().Int("limit", n).Msg("obligation: my recent acks: start")
+	rows, err := r.acks.RecentAcks(ctx, userID, n)
+	if err != nil {
+		log.Error().Err(err).Msg("obligation: my recent acks: store read failed")
+		return nil, err
+	}
+	out := make([]RecentAckItem, 0, len(rows))
+	for _, a := range rows {
+		policyID, versionNo, err := r.core.VersionRef(ctx, a.PolicyVersionID)
+		if err != nil {
+			log.Error().Err(err).Str("policy_version_id", a.PolicyVersionID).Msg("obligation: my recent acks: version lookup failed")
+			return nil, err
+		}
+		if policyID == "" {
+			log.Warn().Str("policy_version_id", a.PolicyVersionID).Msg("obligation: my recent acks: policy unknown to core, skipped")
+			continue
+		}
+		number, title, err := r.core.PolicyDisplay(ctx, policyID)
+		if err != nil {
+			log.Error().Err(err).Str("policy_id", policyID).Msg("obligation: my recent acks: policy lookup failed")
+			return nil, err
+		}
+		out = append(out, RecentAckItem{
+			PolicyID: policyID, Number: number, Title: title,
+			VersionNo: versionNo, PolicyVersionID: a.PolicyVersionID, AckedAt: a.AckedAt,
+		})
+	}
+	log.Debug().Int("count", len(out)).Msg("obligation: my recent acks: done")
+	return out, nil
 }
 
 // PolicyObligation is the resolved obligation metadata for a single policy
@@ -85,6 +149,9 @@ type PolicyObligation struct {
 type User struct {
 	ID    string
 	Email string
+	// DueAt is set by Completion (overdue) and Roster (pending) to when the
+	// person's acknowledgement is due; zero when none applies.
+	DueAt time.Time
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +165,9 @@ type coreObligations interface {
 	ResolvePolicyObligation(ctx context.Context, policyID string) (PolicyObligation, error)
 	// PolicyIDForVersion returns the owning policy ID for a policyVersionID.
 	PolicyIDForVersion(ctx context.Context, policyVersionID string) (string, error)
+	// VersionRef returns the owning policy ID and the version number of a
+	// policy version. An unknown version answers an empty policy ID.
+	VersionRef(ctx context.Context, policyVersionID string) (policyID string, versionNo int32, err error)
 	// VersionPublishedAt returns the publish timestamp for a policy version.
 	VersionPublishedAt(ctx context.Context, policyVersionID string) (time.Time, error)
 	// ListPolicyVersionIDs returns the version IDs for a policy.
@@ -164,6 +234,9 @@ type acksStore interface {
 	// VersionsAckedByUser returns the distinct policy version IDs the user has
 	// acked.
 	VersionsAckedByUser(ctx context.Context, userID string) ([]string, error)
+	// RecentAcks returns the user's acknowledgements newest first, at most
+	// limit rows (limit > 0).
+	RecentAcks(ctx context.Context, userID string, limit int) ([]store.RecentAck, error)
 	// AckedAtForVersion returns user_id -> acked_at for the version.
 	AckedAtForVersion(ctx context.Context, policyVersionID string) (map[string]time.Time, error)
 	// DailyAckCounts returns YYYY-MM-DD (UTC) -> ack count at/after since.
@@ -188,12 +261,46 @@ type Resolver struct {
 	chains categoryChains
 	acks   acksStore
 	views  viewsStore
+	// ackDueDays is the days after publish an acknowledgement is due; 0 means
+	// no due date.
+	ackDueDays int
 }
+
+// DefaultAckDueDays is how long after publish an acknowledgement is due when
+// WithAckDueDays is never called.
+const DefaultAckDueDays = 14
 
 // NewResolver constructs a Resolver. views is satisfied by *store.PolicyViewStore.
 // chains is satisfied by a ChainAdapter wrapping the group-service client.
 func NewResolver(core coreObligations, idn identityUsers, chains categoryChains, acks acksStore, views viewsStore) *Resolver {
-	return &Resolver{core: core, idn: idn, chains: chains, acks: acks, views: views}
+	return &Resolver{core: core, idn: idn, chains: chains, acks: acks, views: views, ackDueDays: DefaultAckDueDays}
+}
+
+// WithAckDueDays sets how many days after a version is published its
+// acknowledgement is due. Zero (or less) turns due dates off. It returns the
+// resolver so it chains off NewResolver.
+func (r *Resolver) WithAckDueDays(days int) *Resolver {
+	if days < 0 {
+		days = 0
+	}
+	r.ackDueDays = days
+	return r
+}
+
+// dueAt is the publish time of policyVersionID plus the configured days, or the
+// zero time when due dates are off or core has no publish time for the version.
+func (r *Resolver) dueAt(ctx context.Context, policyVersionID string) (time.Time, error) {
+	if r.ackDueDays == 0 {
+		return time.Time{}, nil
+	}
+	published, err := r.core.VersionPublishedAt(ctx, policyVersionID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if published.IsZero() {
+		return time.Time{}, nil
+	}
+	return published.AddDate(0, 0, r.ackDueDays), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -438,12 +545,17 @@ func (r *Resolver) MyObligations(ctx context.Context, userID string) ([]Obligati
 			continue
 		}
 
+		due, err := r.dueAt(ctx, p.PublishedVersionID)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, ObligationItem{
 			PolicyID:        p.PolicyID,
 			Number:          p.Number,
 			Title:           p.Title,
 			VersionNo:       p.VersionNo,
 			PolicyVersionID: p.PublishedVersionID,
+			DueAt:           due,
 		})
 	}
 	return out, nil
@@ -678,9 +790,15 @@ func (r *Resolver) Completion(ctx context.Context, policyVersionID, groupID stri
 		ackedSet[id] = struct{}{}
 	}
 
-	// 4. Overdue = audience members who have not acked.
+	// 4. Overdue = audience members who have not acked, each with the date
+	// the version's acknowledgement is due.
+	due, err := r.dueAt(ctx, policyVersionID)
+	if err != nil {
+		return 0, 0, nil, err
+	}
 	for _, u := range audience {
 		if _, ok := ackedSet[u.ID]; !ok {
+			u.DueAt = due
 			overdue = append(overdue, u)
 		}
 	}
@@ -803,10 +921,15 @@ func (r *Resolver) Roster(ctx context.Context, policyVersionID, groupID string) 
 	if err != nil {
 		return nil, nil, err
 	}
+	due, err := r.dueAt(ctx, policyVersionID)
+	if err != nil {
+		return nil, nil, err
+	}
 	for _, u := range audience {
 		if t, ok := at[u.ID]; ok {
 			acked = append(acked, RosterEntry{ID: u.ID, Email: u.Email, AckedAt: t})
 		} else {
+			u.DueAt = due
 			pending = append(pending, u)
 		}
 	}

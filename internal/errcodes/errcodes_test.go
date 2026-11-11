@@ -39,6 +39,9 @@ func TestUserSafeCodesKeepTheirMessage(t *testing.T) {
 		meta map[string]string
 	}{
 		{errcodes.AckAuthRequired(), codes.Unauthenticated, 7003, nil},
+		{errcodes.InboxAuthRequired(), codes.Unauthenticated, 7007, nil},
+		{errcodes.InboxNoticeNotFound(errors.New("gone")), codes.NotFound, 7008, nil},
+		{errcodes.InboxPageInvalid(errors.New("bad")), codes.InvalidArgument, 7009, nil},
 		{errcodes.PrefMandatoryOff("compliance", nil), codes.InvalidArgument, 7004, map[string]string{"category": "compliance"}},
 		{errcodes.PrefInvalid("daily_hour", nil), codes.InvalidArgument, 7005, map[string]string{"field": "daily_hour"}},
 	}

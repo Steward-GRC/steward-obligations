@@ -114,6 +114,9 @@ type Config struct {
 	SchedulerEnabled    bool
 	SchedulerTickSec    int
 	EscalationAfterDays int
+	// AckDueDays is how many days after a version is published its
+	// acknowledgement is due; 0 turns due dates off.
+	AckDueDays int
 
 	// SiteAdminEmails receive the site-wide SSO notices.
 	SiteAdminEmails []string
@@ -189,6 +192,7 @@ func Load() (Config, error) {
 		SchedulerEnabled:    boolOr("SCHEDULER_ENABLED", true),
 		SchedulerTickSec:    intOr("SCHEDULER_TICK_SEC", 900),
 		EscalationAfterDays: intOr("ESCALATION_AFTER_DAYS", 30),
+		AckDueDays:          nonNegIntOr("ACK_DUE_DAYS", 14),
 
 		SiteAdminEmails: splitCSV(os.Getenv("SITE_ADMIN_EMAILS")),
 	}
@@ -230,6 +234,14 @@ func intOr(k string, d int) int {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
 		}
+	}
+	return d
+}
+
+// nonNegIntOr is intOr that also falls back to d for a negative value.
+func nonNegIntOr(k string, d int) int {
+	if n := intOr(k, d); n >= 0 {
+		return n
 	}
 	return d
 }

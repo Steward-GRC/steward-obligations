@@ -30,6 +30,7 @@ message GetCompletionReportResponse {
 message OverdueEntry {
   string user_id = 1;
   string email = 2;
+  google.protobuf.Timestamp due_at = 3; // unset when no due date applies
 }
 
 message GetAckRosterRequest {
@@ -40,6 +41,7 @@ message AckRosterEntry {
   string user_id = 1;
   string email = 2;
   google.protobuf.Timestamp acked_at = 3; // unset for pending entries
+  google.protobuf.Timestamp due_at = 4; // pending entries only; unset once acknowledged or when no due date applies
 }
 message GetAckRosterResponse {
   repeated AckRosterEntry acked = 1;
