@@ -122,7 +122,10 @@ service NotifPrefService {
   rpc SetDigestWindow(SetDigestWindowRequest) returns (SetDigestWindowResponse);
 
   // Per-user quiet hours: a window in which email and push are held. In-app
-  // and mandatory notices are never held, and a held message is not sent later.
+  // is never held. Security and transactional kinds, and any critical-severity
+  // kind, bypass the window; the other kinds, high-severity compliance ones
+  // (ack-required, policy-ack-reminder, review-due) included, are held. A held
+  // message is not sent later.
   rpc GetQuietHours(GetQuietHoursRequest) returns (GetQuietHoursResponse);
   rpc SetQuietHours(SetQuietHoursRequest) returns (SetQuietHoursResponse);
 }

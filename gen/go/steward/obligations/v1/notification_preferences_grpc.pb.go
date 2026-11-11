@@ -51,7 +51,10 @@ type NotifPrefServiceClient interface {
 	SetTypeCadence(ctx context.Context, in *SetTypeCadenceRequest, opts ...grpc.CallOption) (*SetTypeCadenceResponse, error)
 	SetDigestWindow(ctx context.Context, in *SetDigestWindowRequest, opts ...grpc.CallOption) (*SetDigestWindowResponse, error)
 	// Per-user quiet hours: a window in which email and push are held. In-app
-	// and mandatory notices are never held, and a held message is not sent later.
+	// is never held. Security and transactional kinds, and any critical-severity
+	// kind, bypass the window; the other kinds, high-severity compliance ones
+	// (ack-required, policy-ack-reminder, review-due) included, are held. A held
+	// message is not sent later.
 	GetQuietHours(ctx context.Context, in *GetQuietHoursRequest, opts ...grpc.CallOption) (*GetQuietHoursResponse, error)
 	SetQuietHours(ctx context.Context, in *SetQuietHoursRequest, opts ...grpc.CallOption) (*SetQuietHoursResponse, error)
 }
@@ -172,7 +175,10 @@ type NotifPrefServiceServer interface {
 	SetTypeCadence(context.Context, *SetTypeCadenceRequest) (*SetTypeCadenceResponse, error)
 	SetDigestWindow(context.Context, *SetDigestWindowRequest) (*SetDigestWindowResponse, error)
 	// Per-user quiet hours: a window in which email and push are held. In-app
-	// and mandatory notices are never held, and a held message is not sent later.
+	// is never held. Security and transactional kinds, and any critical-severity
+	// kind, bypass the window; the other kinds, high-severity compliance ones
+	// (ack-required, policy-ack-reminder, review-due) included, are held. A held
+	// message is not sent later.
 	GetQuietHours(context.Context, *GetQuietHoursRequest) (*GetQuietHoursResponse, error)
 	SetQuietHours(context.Context, *SetQuietHoursRequest) (*SetQuietHoursResponse, error)
 	mustEmbedUnimplementedNotifPrefServiceServer()
