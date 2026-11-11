@@ -47,6 +47,8 @@ import (
 	"time"
 
 	authz "github.com/Steward-GRC/steward-authz"
+	"github.com/Steward-GRC/steward-obligations/internal/logctx"
+	"github.com/Steward-GRC/steward-obligations/internal/store"
 )
 
 // ---------------------------------------------------------------------------
@@ -71,6 +73,65 @@ type ObligationItem struct {
 	Title           string
 	VersionNo       int32
 	PolicyVersionID string
+}
+
+// RecentAckItem is one acknowledgement the user recorded, named by its policy.
+type RecentAckItem struct {
+	PolicyID        string
+	Number          string
+	Title           string
+	VersionNo       int32
+	PolicyVersionID string
+	AckedAt         time.Time
+}
+
+const (
+	defaultRecentAcks = 10
+	maxRecentAcks     = 100
+)
+
+// MyRecentAcks returns the user's own acknowledgements, newest first, each named
+// by its policy number, title and version. limit <= 0 means the default of 10
+// and the answer never exceeds 100. An acknowledgement whose policy core no
+// longer knows is left out (logged), not an error.
+func (r *Resolver) MyRecentAcks(ctx context.Context, userID string, limit int32) ([]RecentAckItem, error) {
+	log := logctx.From(ctx)
+	n := int(limit)
+	if n <= 0 {
+		n = defaultRecentAcks
+	}
+	if n > maxRecentAcks {
+		n = maxRecentAcks
+	}
+	log.Debug().Int("limit", n).Msg("obligation: my recent acks: start")
+	rows, err := r.acks.RecentAcks(ctx, userID, n)
+	if err != nil {
+		log.Error().Err(err).Msg("obligation: my recent acks: store read failed")
+		return nil, err
+	}
+	out := make([]RecentAckItem, 0, len(rows))
+	for _, a := range rows {
+		policyID, versionNo, err := r.core.VersionRef(ctx, a.PolicyVersionID)
+		if err != nil {
+			log.Error().Err(err).Str("policy_version_id", a.PolicyVersionID).Msg("obligation: my recent acks: version lookup failed")
+			return nil, err
+		}
+		if policyID == "" {
+			log.Warn().Str("policy_version_id", a.PolicyVersionID).Msg("obligation: my recent acks: policy unknown to core, skipped")
+			continue
+		}
+		number, title, err := r.core.PolicyDisplay(ctx, policyID)
+		if err != nil {
+			log.Error().Err(err).Str("policy_id", policyID).Msg("obligation: my recent acks: policy lookup failed")
+			return nil, err
+		}
+		out = append(out, RecentAckItem{
+			PolicyID: policyID, Number: number, Title: title,
+			VersionNo: versionNo, PolicyVersionID: a.PolicyVersionID, AckedAt: a.AckedAt,
+		})
+	}
+	log.Debug().Int("count", len(out)).Msg("obligation: my recent acks: done")
+	return out, nil
 }
 
 // PolicyObligation is the resolved obligation metadata for a single policy
@@ -98,6 +159,9 @@ type coreObligations interface {
 	ResolvePolicyObligation(ctx context.Context, policyID string) (PolicyObligation, error)
 	// PolicyIDForVersion returns the owning policy ID for a policyVersionID.
 	PolicyIDForVersion(ctx context.Context, policyVersionID string) (string, error)
+	// VersionRef returns the owning policy ID and the version number of a
+	// policy version. An unknown version answers an empty policy ID.
+	VersionRef(ctx context.Context, policyVersionID string) (policyID string, versionNo int32, err error)
 	// VersionPublishedAt returns the publish timestamp for a policy version.
 	VersionPublishedAt(ctx context.Context, policyVersionID string) (time.Time, error)
 	// ListPolicyVersionIDs returns the version IDs for a policy.
@@ -164,6 +228,9 @@ type acksStore interface {
 	// VersionsAckedByUser returns the distinct policy version IDs the user has
 	// acked.
 	VersionsAckedByUser(ctx context.Context, userID string) ([]string, error)
+	// RecentAcks returns the user's acknowledgements newest first, at most
+	// limit rows (limit > 0).
+	RecentAcks(ctx context.Context, userID string, limit int) ([]store.RecentAck, error)
 	// AckedAtForVersion returns user_id -> acked_at for the version.
 	AckedAtForVersion(ctx context.Context, policyVersionID string) (map[string]time.Time, error)
 	// DailyAckCounts returns YYYY-MM-DD (UTC) -> ack count at/after since.

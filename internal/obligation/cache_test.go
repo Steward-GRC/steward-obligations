@@ -22,6 +22,9 @@ func (c *countingCore) ListObligatingPolicies(context.Context) ([]obligation.Obl
 func (c *countingCore) ResolvePolicyObligation(context.Context, string) (obligation.PolicyObligation, error) {
 	return obligation.PolicyObligation{}, nil
 }
+func (c *countingCore) VersionRef(context.Context, string) (string, int32, error) {
+	return "", 0, nil
+}
 func (c *countingCore) PolicyIDForVersion(context.Context, string) (string, error) { return "", nil }
 func (c *countingCore) VersionPublishedAt(context.Context, string) (time.Time, error) {
 	return time.Time{}, nil

@@ -307,3 +307,34 @@ func (s *AcknowledgmentStore) Acked(ctx context.Context, userID string, versionI
 	}
 	return result, rows.Err()
 }
+
+// RecentAck is one acknowledgement of a person, newest-first listing row.
+type RecentAck struct {
+	PolicyVersionID string
+	AckedAt         time.Time
+}
+
+// RecentAcks returns the user's acknowledgements newest first, at most limit
+// rows (limit must be positive; the caller applies the default and the cap).
+// It only ever reads the given user's rows.
+func (s *AcknowledgmentStore) RecentAcks(ctx context.Context, userID string, limit int) ([]RecentAck, error) {
+	rows, err := querier(ctx, s.db).Query(ctx,
+		`SELECT policy_version_id, acked_at FROM acknowledgments
+         WHERE user_id = $1
+         ORDER BY acked_at DESC, policy_version_id
+         LIMIT $2`,
+		userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RecentAck
+	for rows.Next() {
+		var a RecentAck
+		if err := rows.Scan(&a.PolicyVersionID, &a.AckedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
