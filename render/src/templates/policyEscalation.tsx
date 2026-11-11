@@ -33,7 +33,7 @@ const PolicyEscalation = ({
   recipientName,
   ...chrome
 }: PolicyEscalationProperties) => (
-  <NotificationLayout {...chrome} preferencesUrl={preferencesUrl} previewText={`Overdue: ${policyTitle}`}>
+  <NotificationLayout {...chrome} notice="required" preferencesUrl={preferencesUrl} previewText={`Overdue: ${policyTitle}`}>
     <EmailHero eyebrow="Acknowledgement overdue" title={policyTitle} />
     <EmailText>Hi {recipientName},</EmailText>
     {policyRef !== undefined && (
@@ -45,7 +45,7 @@ const PolicyEscalation = ({
       This policy was due for acknowledgement by {dueBy} and is still outstanding.
     </EmailCallout>
     <EmailText>{escalationNote}</EmailText>
-    <EmailSection align="center" padding="8px 32px 28px">
+    <EmailSection padding="8px 24px 24px">
       <EmailButton href={ackUrl}>Acknowledge now</EmailButton>
     </EmailSection>
   </NotificationLayout>

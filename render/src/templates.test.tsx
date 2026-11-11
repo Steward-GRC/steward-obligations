@@ -74,6 +74,7 @@ const PREFERENCES_LINK_KINDS = new Set([
   "policy-escalation",
   "assigned-as-owner",
   "raci-permission-granted",
+  "review-due",
   "workflow-started",
   "workflow-awaiting-approval",
   "workflow-denied",

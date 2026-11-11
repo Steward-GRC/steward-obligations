@@ -28,6 +28,7 @@ import {
   sampleVars as raciPermissionGrantedSampleVars,
 } from "./raciPermissionGranted.js";
 import { RecoveryCode, sampleVars as recoveryCodeSampleVars } from "./recoveryCode.js";
+import { ReviewDue, sampleVars as reviewDueSampleVars } from "./reviewDue.js";
 import { SpCertRotated, sampleVars as spCertRotatedSampleVars } from "./spCertRotated.js";
 import { SsoAccountWelcome, sampleVars as ssoAccountWelcomeSampleVars } from "./ssoAccountWelcome.js";
 import { SsoActivated, sampleVars as ssoActivatedSampleVars } from "./ssoActivated.js";
@@ -54,6 +55,7 @@ export const EMAIL_KINDS = [
   "kratos-recovery",
   "assigned-as-owner",
   "raci-permission-granted",
+  "review-due",
   "workflow-started",
   "workflow-awaiting-approval",
   "workflow-denied",
@@ -95,6 +97,7 @@ export const EMAIL_COMPONENTS: Record<EmailKind, ComponentType<any>> = {
   "policy-published": PolicyPublished,
   "policy-retired": PolicyRetired,
   "raci-permission-granted": RaciPermissionGranted,
+  "review-due": ReviewDue,
   "sp-cert-rotated": SpCertRotated,
   "sso-account-welcome": SsoAccountWelcome,
   "sso-activated": SsoActivated,
@@ -124,6 +127,7 @@ export const EMAIL_SUBJECTS: Record<EmailKind, (productName: string) => string> 
   "policy-published": () => "New policy published",
   "policy-retired": () => "Policy retired",
   "raci-permission-granted": () => "You've been granted a new permission",
+  "review-due": () => "Policy review due",
   "sp-cert-rotated": () => "Your SSO signing certificate was rotated",
   "sso-account-welcome": (product) => `Your ${product} account is ready`,
   "sso-activated": () => "Single sign-on is now active",
@@ -158,6 +162,7 @@ export const EMAIL_SAMPLE_VARS: Record<EmailKind, Record<string, unknown>> = {
   "policy-published": asVars(policyPublishedSampleVars),
   "policy-retired": asVars(policyRetiredSampleVars),
   "raci-permission-granted": asVars(raciPermissionGrantedSampleVars),
+  "review-due": asVars(reviewDueSampleVars),
   "sp-cert-rotated": asVars(spCertRotatedSampleVars),
   "sso-account-welcome": asVars(ssoAccountWelcomeSampleVars),
   "sso-activated": asVars(ssoActivatedSampleVars),

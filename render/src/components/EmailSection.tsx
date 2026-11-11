@@ -4,7 +4,7 @@
 import { Section } from "@react-email/components";
 import type { ReactNode } from "react";
 
-import { INSET } from "./palette.js";
+import { DARK_CLASS, INSET, palette } from "./palette.js";
 
 export interface EmailSectionProperties {
   align?: "left" | "center" | "right";
@@ -19,7 +19,11 @@ export const EmailSection = ({
   children,
   padding = `0 ${INSET}`,
 }: EmailSectionProperties) => (
-  <Section align={align} style={{ backgroundColor: background, padding, textAlign: align }}>
+  <Section
+    align={align}
+    className={background === palette.tint ? DARK_CLASS.tint : undefined}
+    style={{ backgroundColor: background, padding, textAlign: align }}
+  >
     {children}
   </Section>
 );

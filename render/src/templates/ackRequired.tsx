@@ -31,7 +31,7 @@ const AckRequired = ({
   recipientName,
   ...chrome
 }: AckRequiredProperties) => (
-  <NotificationLayout {...chrome} preferencesUrl={preferencesUrl} previewText={`Action required: ${itemTitle}`}>
+  <NotificationLayout {...chrome} notice="required" preferencesUrl={preferencesUrl} previewText={`Action required: ${itemTitle}`}>
     <EmailHero eyebrow="Action required" title="Your acknowledgement is needed" />
     <EmailText>Hi {recipientName},</EmailText>
     <EmailText>{bodyText}</EmailText>
@@ -42,7 +42,7 @@ const AckRequired = ({
       </EmailText>
     </EmailCard>
     {dueBy !== undefined && <EmailCallout title="Due date">Please acknowledge by {dueBy}.</EmailCallout>}
-    <EmailSection align="center" padding="8px 32px 28px">
+    <EmailSection padding="8px 24px 24px">
       <EmailButton href={ackUrl}>Review &amp; acknowledge</EmailButton>
     </EmailSection>
   </NotificationLayout>

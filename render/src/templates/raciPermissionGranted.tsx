@@ -51,7 +51,7 @@ const RaciPermissionGranted = ({
     <EmailCallout level="info" title="Scope">
       This {role} access applies to {category} and its policies and sub-categories.
     </EmailCallout>
-    <EmailSection align="center" padding="8px 32px 28px">
+    <EmailSection padding="8px 24px 24px">
       <EmailButton href={actionUrl}>{actionLabel ?? `Go to ${category}`}</EmailButton>
     </EmailSection>
   </NotificationLayout>

@@ -1,7 +1,7 @@
 // Copyright 2026 The Steward Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import { EmailCallout, EmailCard, EmailHero, EmailRow, EmailText } from "../components/index.js";
+import { EmailButton, EmailCallout, EmailCard, EmailHero, EmailRow, EmailSection, EmailText } from "../components/index.js";
 
 import { type ChromeProperties, NotificationLayout } from "./layout.js";
 
@@ -9,10 +9,11 @@ export interface BreakGlassAlertProperties extends ChromeProperties {
   at?: string;
   email: string;
   reason?: string;
+  reviewUrl?: string;
 }
 
-const BreakGlassAlert = ({ at, email, reason, ...chrome }: BreakGlassAlertProperties) => (
-  <NotificationLayout {...chrome} previewText={`Security alert: break-glass sign-in for ${email}`}>
+const BreakGlassAlert = ({ at, email, reason, reviewUrl, ...chrome }: BreakGlassAlertProperties) => (
+  <NotificationLayout {...chrome} notice="security" previewText={`Security alert: break-glass sign-in for ${email}`}>
     <EmailHero eyebrow="Security alert" title="A break-glass sign-in was used" />
     <EmailText>The break-glass credential for {email} was used to bypass single sign-on.</EmailText>
     {(at !== undefined || reason !== undefined) && (
@@ -24,6 +25,13 @@ const BreakGlassAlert = ({ at, email, reason, ...chrome }: BreakGlassAlertProper
     <EmailCallout level="error" title="Review this immediately">
       If this wasn&apos;t expected, rotate the break-glass credential and investigate right away.
     </EmailCallout>
+    {reviewUrl !== undefined && (
+      <EmailSection padding="8px 24px 24px">
+        <EmailButton href={reviewUrl} variant="danger">
+          Review this immediately
+        </EmailButton>
+      </EmailSection>
+    )}
   </NotificationLayout>
 );
 

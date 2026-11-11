@@ -114,3 +114,21 @@ func TestLoadRejectsABadWorkloadAuthSetting(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadReadsTheEmailDesignSettings(t *testing.T) {
+	required(t)
+	t.Setenv("EMAIL_ORGANISATION_NAME", "Example Organisation")
+	t.Setenv("EMAIL_MARK_URL", "https://policies.example.org/steward-email-mark-2x.png")
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.Equal(t, "Example Organisation", cfg.EmailOrganisationName)
+	require.Equal(t, "https://policies.example.org/steward-email-mark-2x.png", cfg.EmailMarkSrc)
+}
+
+func TestLoadLeavesTheEmailDesignSettingsEmptyByDefault(t *testing.T) {
+	required(t)
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.Empty(t, cfg.EmailOrganisationName)
+	require.Empty(t, cfg.EmailMarkSrc)
+}

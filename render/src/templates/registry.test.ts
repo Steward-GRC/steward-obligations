@@ -53,6 +53,7 @@ test("keeps every kind name and default subject the sender relies on", () => {
     "policy-published": "New policy published",
     "policy-retired": "Policy retired",
     "raci-permission-granted": "You've been granted a new permission",
+    "review-due": "Policy review due",
     "sp-cert-rotated": "Your SSO signing certificate was rotated",
     "sso-account-welcome": "Your Steward account is ready",
     "sso-activated": "Single sign-on is now active",

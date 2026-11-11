@@ -22,7 +22,7 @@ const DomainVerified = ({ domain, preferencesUrl, ssoSetupUrl, ...chrome }: Doma
       Set up your identity provider connection to finish enabling SSO.
     </EmailCallout>
     {ssoSetupUrl !== undefined && (
-      <EmailSection align="center" padding="8px 32px 28px">
+      <EmailSection padding="8px 24px 24px">
         <EmailButton href={ssoSetupUrl}>Configure SSO</EmailButton>
       </EmailSection>
     )}

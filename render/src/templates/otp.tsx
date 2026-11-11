@@ -15,13 +15,13 @@ export interface OtpProperties extends ChromeProperties {
 }
 
 const Otp = ({ code, expiresInMinutes, recipientName, requestContext, ...chrome }: OtpProperties) => (
-  <NotificationLayout {...chrome} previewText="Your verification code">
+  <NotificationLayout {...chrome} notice="security" previewText="Your verification code">
     <EmailHero eyebrow="Verification" title="Your verification code" />
     <EmailText>
       {recipientName !== undefined ? `Hi ${recipientName}, use` : "Use"} the code below
       {requestContext !== undefined ? ` to ${requestContext}` : ""}.
     </EmailText>
-    <EmailSection align="center" background={palette.tint} padding="28px 32px">
+    <EmailSection align="center" background={palette.tint} padding="28px 24px">
       <EmailHeading size="lg">{code.split("").join(DIGIT_GAP)}</EmailHeading>
     </EmailSection>
     <EmailText muted>

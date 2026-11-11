@@ -43,7 +43,7 @@ const DigestSection = ({ items, title }: DigestSectionProperties) => {
   if (items.length === 0) return null;
   return (
     <>
-      <EmailSection padding="20px 32px 4px">
+      <EmailSection padding="20px 24px 4px">
         <EmailHeading size="sm">{`${title} (${items.length})`}</EmailHeading>
       </EmailSection>
       <EmailCard>
@@ -102,7 +102,7 @@ const Digest = ({
       <DigestSection items={approvals} title="Approvals & assignments" />
       <DigestSection items={other} title="Other" />
       {portalUrl !== undefined && (
-        <EmailSection align="center" padding="16px 32px 28px">
+        <EmailSection padding="16px 24px 24px">
           <EmailButton href={portalUrl}>{portalLabel}</EmailButton>
         </EmailSection>
       )}

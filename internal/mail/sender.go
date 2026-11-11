@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 
+	"github.com/Steward-GRC/steward-obligations/internal/logctx"
 	"github.com/Steward-GRC/steward-obligations/internal/notifpolicy"
 	"github.com/Steward-GRC/steward-obligations/internal/notifytoken"
 )
@@ -62,15 +63,21 @@ type SenderConfig struct {
 	// TLS is on (i.e. AppEnv != "dev").
 	SMTPTLSInsecure bool
 	DevCatchAllTo   string
-	// LogoSrc is the absolute, PUBLIC HTTPS URL of the brand logo stamped into
-	// every email's `logoSrc` template var so all templates render the same
-	// logo. Must be publicly reachable — mail clients fetch it externally.
+	// LogoSrc is the absolute, PUBLIC HTTPS URL of the adopter's logo stamped
+	// into every email's `logoSrc` template var. It shows beside the
+	// organisation name on the right of the header. Must be publicly
+	// reachable — mail clients fetch it externally.
 	LogoSrc string
 	// ProductName and LegalText are adopter branding: the product name in the
 	// header and the legal or postal line in the footer. Empty leaves the
 	// render sidecar's defaults (the product name "Steward", no footer line).
 	ProductName string
 	LegalText   string
+	// OrganisationName is the adopter's name, shown on the right of the email
+	// header. MarkSrc is the absolute, public URL of the Steward mark PNG shown
+	// in the header's paper tile. Empty leaves each out.
+	OrganisationName string
+	MarkSrc          string
 }
 
 // senderOptions collects the values an Option can override in NewSender.
@@ -365,7 +372,7 @@ func NewSender(cfg SenderConfig, opts ...Option) (*Sender, error) {
 	)
 
 	branding := map[string]string{}
-	for k, v := range map[string]string{"logoSrc": cfg.LogoSrc, "productName": cfg.ProductName, "legalText": cfg.LegalText} {
+	for k, v := range map[string]string{"logoSrc": cfg.LogoSrc, "productName": cfg.ProductName, "legalText": cfg.LegalText, "organisationName": cfg.OrganisationName, "markSrc": cfg.MarkSrc} {
 		if v != "" {
 			branding[k] = v
 		}
@@ -459,11 +466,16 @@ func (s *Sender) Send(ctx context.Context, kind, userID, to, dedupRef string, va
 	// Stamp the adopter branding into every template's vars, unless the caller
 	// set a value of its own. All callers pass map vars.
 	if m, ok := vars.(map[string]any); ok {
+		stamped := make([]string, 0, len(s.branding))
 		for k, v := range s.branding {
 			if _, set := m[k]; !set {
 				m[k] = v
+				stamped = append(stamped, k)
 			}
 		}
+		// Keys only: the values are adopter text and URLs, never logged.
+		logger := logctx.From(ctx)
+		logger.Debug().Str("kind", kind).Strs("branding_keys", stamped).Msg("mail: stamped adopter branding")
 	}
 	// Stamp the signed manage/unsubscribe links:
 	// a preferences deep-link in the footer of ALL mail, and RFC 8058 one-click

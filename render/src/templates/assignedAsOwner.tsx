@@ -50,7 +50,7 @@ const AssignedAsOwner = ({
       Owners can override and are accountable for review across {category} and everything beneath
       it.
     </EmailCallout>
-    <EmailSection align="center" padding="8px 32px 28px">
+    <EmailSection padding="8px 24px 24px">
       <EmailButton href={actionUrl}>{actionLabel ?? `Go to ${category}`}</EmailButton>
     </EmailSection>
   </NotificationLayout>

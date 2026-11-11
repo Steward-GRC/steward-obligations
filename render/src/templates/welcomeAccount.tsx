@@ -25,6 +25,7 @@ const WelcomeAccount = ({
 }: WelcomeAccountProperties) => (
   <NotificationLayout
     {...chrome}
+    notice="security"
     previewText={`Welcome, your account is ready, ${recipientName}.`}
     productName={productName}
   >
@@ -33,7 +34,7 @@ const WelcomeAccount = ({
     <EmailText>
       {introCopy ?? `Your ${productName} account has been created. Set a password and sign in to get started.`}
     </EmailText>
-    <EmailSection align="center" padding="8px 32px 28px">
+    <EmailSection padding="8px 24px 24px">
       <EmailButton href={accountUrl}>{accountLabel}</EmailButton>
     </EmailSection>
     <EmailCallout level="info" title="What your account gives you">

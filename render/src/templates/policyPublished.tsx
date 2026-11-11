@@ -41,6 +41,7 @@ const PolicyPublished = ({
   return (
     <NotificationLayout
       {...chrome}
+      notice="required"
       preferencesUrl={preferencesUrl}
       previewText={`New policy published: ${policyTitle}`}
     >
@@ -56,11 +57,11 @@ const PolicyPublished = ({
           This policy requires your formal acknowledgement.
         </EmailCallout>
       )}
-      <EmailSection align="center" padding={`8px 32px ${showAck ? "12px" : "28px"}`}>
+      <EmailSection padding={`8px 24px ${showAck ? "12px" : "24px"}`}>
         <EmailButton href={policyUrl}>Read policy</EmailButton>
       </EmailSection>
       {showAck && (
-        <EmailSection align="center" padding="0 32px 28px">
+        <EmailSection padding="0 24px 24px">
           <EmailButton href={ackUrl} variant="secondary">
             Acknowledge
           </EmailButton>

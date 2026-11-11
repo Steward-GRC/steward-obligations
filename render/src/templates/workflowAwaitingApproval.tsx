@@ -52,11 +52,11 @@ const WorkflowAwaitingApproval = ({
         Please respond by {dueBy}.
       </EmailCallout>
     )}
-    <EmailSection align="center" padding={`8px 32px ${reviewUrl !== undefined ? "12px" : "28px"}`}>
+    <EmailSection padding={`8px 24px ${reviewUrl !== undefined ? "12px" : "24px"}`}>
       <EmailButton href={approveUrl}>Approve</EmailButton>
     </EmailSection>
     {reviewUrl !== undefined && (
-      <EmailSection align="center" padding="0 32px 28px">
+      <EmailSection padding="0 24px 24px">
         <EmailButton href={reviewUrl} variant="secondary">
           Review
         </EmailButton>
