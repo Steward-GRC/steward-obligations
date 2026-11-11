@@ -4,6 +4,7 @@
 package config_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -131,4 +132,34 @@ func TestLoadLeavesTheEmailDesignSettingsEmptyByDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, cfg.EmailOrganisationName)
 	require.Empty(t, cfg.EmailMarkSrc)
+}
+
+// An unset or empty endpoint means tracing is off; go-otel's Init exports
+// nowhere only for an empty endpoint.
+func TestLoadOTLPEndpoint(t *testing.T) {
+	cases := map[string]struct {
+		set  bool
+		val  string
+		want string
+	}{
+		"unset": {},
+		"empty": {set: true},
+		"set":   {set: true, val: "otel.example.org:4317", want: "otel.example.org:4317"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("DATABASE_DSN", "postgres://test/test")
+			t.Setenv("CORE_GRPC_ADDR", "core:9090")
+			t.Setenv("IDENTITY_GRPC_ADDR", "identity:9090")
+			t.Setenv("INTERNAL_BASE_URL", "https://policy.example.test")
+			t.Setenv("WORKLOAD_AUTH", "disabled")
+			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", tc.val)
+			if !tc.set {
+				os.Unsetenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+			}
+			c, err := config.Load()
+			require.NoError(t, err)
+			require.Equal(t, tc.want, c.OTLPEndpoint)
+		})
+	}
 }

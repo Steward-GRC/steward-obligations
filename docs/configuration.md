@@ -13,7 +13,7 @@ problem listed.
 | `RABBITMQ_URL` | required for start-up | The broker. |
 | `GRPC_PORT` | `9090` | gRPC. |
 | `PROBE_PORT` | `8080` | `/livez` and `/readyz`. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | Traces and metrics. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | Traces and metrics. Unset or empty turns tracing off. |
 | `LOG_LEVEL`, `LOG_FORMAT` | go-log's | `trace` and `console` locally; clusters log JSON. |
 | `GRPC_TLS_CERT_FILE`, `GRPC_TLS_KEY_FILE`, `GRPC_TLS_CLIENT_CA_FILE` | empty | mTLS, set together. |
 | `CORE_GRPC_ADDR`, `IDENTITY_GRPC_ADDR` | required | The services called. |
