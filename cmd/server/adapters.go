@@ -9,11 +9,11 @@ import (
 	"slices"
 	"time"
 
-	authz "github.com/Steward-GRC/steward-authz"
 	"github.com/rs/zerolog"
 
 	identityv1 "github.com/Steward-GRC/steward-obligations/gen/go/thirdparty/identity/v1"
 	ackpkg "github.com/Steward-GRC/steward-obligations/internal/ack"
+	"github.com/Steward-GRC/steward-obligations/internal/authz"
 	"github.com/Steward-GRC/steward-obligations/internal/emailservice"
 	"github.com/Steward-GRC/steward-obligations/internal/mail"
 	"github.com/Steward-GRC/steward-obligations/internal/notify"

@@ -140,3 +140,72 @@ func (s *UserVersionNotifiedStore) RecordEscalation(ctx context.Context, userID,
          WHERE user_id=$1 AND policy_version_id=$2`, userID, versionID, at)
 	return err
 }
+
+// PendingUserIDsForVersion returns the users with a reminder anchor on the
+// version who have not acknowledged it: the acknowledgements still owed that
+// the store holds state for.
+func (s *UserVersionNotifiedStore) PendingUserIDsForVersion(ctx context.Context, policyVersionID string) ([]string, error) {
+	rows, err := s.db.Querier().Query(ctx, `
+        SELECT n.user_id FROM user_version_notified n
+        WHERE n.policy_version_id = $1
+          AND NOT EXISTS (SELECT 1 FROM acknowledgments a
+                          WHERE a.user_id = n.user_id AND a.policy_version_id = n.policy_version_id)
+        ORDER BY n.user_id`, policyVersionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// VersionsPendingForUser returns the versions the user has a reminder anchor on
+// and has not acknowledged.
+func (s *UserVersionNotifiedStore) VersionsPendingForUser(ctx context.Context, userID string) ([]string, error) {
+	rows, err := s.db.Querier().Query(ctx, `
+        SELECT n.policy_version_id FROM user_version_notified n
+        WHERE n.user_id = $1
+          AND NOT EXISTS (SELECT 1 FROM acknowledgments a
+                          WHERE a.user_id = n.user_id AND a.policy_version_id = n.policy_version_id)
+        ORDER BY n.policy_version_id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// DeletePending removes the reminder anchors of the users on the version, so
+// they stop being reminded of an acknowledgement they no longer owe. It leaves
+// the anchor of anyone who has acknowledged the version, and never touches an
+// acknowledgement. It returns the number of anchors removed.
+func (s *UserVersionNotifiedStore) DeletePending(ctx context.Context, policyVersionID string, userIDs []string) (int, error) {
+	if len(userIDs) == 0 {
+		return 0, nil
+	}
+	tag, err := s.db.Querier().Exec(ctx, `
+        DELETE FROM user_version_notified n
+        WHERE n.policy_version_id = $1 AND n.user_id = ANY($2)
+          AND NOT EXISTS (SELECT 1 FROM acknowledgments a
+                          WHERE a.user_id = n.user_id AND a.policy_version_id = n.policy_version_id)`,
+		policyVersionID, userIDs)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
+}

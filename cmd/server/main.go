@@ -299,6 +299,9 @@ func run(ctx context.Context, lg log.Logger, logger zerolog.Logger) error {
 
 	newUserGate := store.NewUserFirstSeenStore(db, time.Duration(cfg.NewUserAckGraceHours)*time.Hour)
 	notifiedTracker := store.NewUserVersionNotifiedStore(db)
+	// A person who drops out of an audience stops being reminded; their
+	// pending state is released, never an acknowledgement already given.
+	resolver.WithPendingStore(notifiedTracker)
 	welcomeGate := store.NewWelcomeSentStore(db)
 	approvalNotified := store.NewApprovalNotifiedStore(db)
 

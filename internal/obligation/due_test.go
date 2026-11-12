@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	authz "github.com/Steward-GRC/steward-authz"
+	corev1 "github.com/Steward-GRC/steward-obligations/gen/go/thirdparty/core/v1"
 	"github.com/Steward-GRC/steward-obligations/internal/obligation"
 )
 
@@ -28,7 +28,7 @@ func dueFixture(published map[string]time.Time) (*fakeCore, *fakeChains, *fakeId
 		},
 		publishedAt: published,
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{"grp-a": groupAckChain("GroupA", "AD-A")}}
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{"grp-a": groupAckChain("GroupA", "AD-A")}}
 	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-A"}, "u2": {"AD-A"}}}
 	return core, chains, idn
 }

@@ -26,12 +26,13 @@ type obligationChangedEvent struct {
 // Dependency interface
 // ---------------------------------------------------------------------------
 
-// AckReconciler purges acks that are orphaned when users leave a policy's
-// obligated audience. *obligation.Resolver satisfies this interface; tests use
-// a fake.
+// AckReconciler releases the pending acknowledgements of users who leave a
+// policy's obligated audience. Acknowledgements already given are kept.
+// *obligation.Resolver satisfies this interface; tests use a fake.
 type AckReconciler interface {
-	// ReconcilePolicyAcks deletes orphaned acks across every version of policyID
-	// and returns the number of rows removed.
+	// ReconcilePolicyAcks releases the pending state of users no longer in the
+	// audience across every version of policyID and returns the number of
+	// entries released. It never deletes an acknowledgement.
 	ReconcilePolicyAcks(ctx context.Context, policyID string) (int, error)
 }
 
@@ -49,9 +50,9 @@ type ObligatingInvalidator interface {
 // "policy.obligation_changed" routing key. Each message names one policy whose
 // obligated audience may have shrunk (a group's ack trigger turned off, an
 // audience override changed, a user removed from a group, a category moved).
-// The consumer re-resolves the policy's current audience and deletes any ack
-// whose user is no longer in it — enforcing "kill the ack when the obligation
-// goes away."
+// The consumer re-resolves the policy's current audience and releases the
+// pending acknowledgement of any user no longer in it, so they stop being
+// reminded. An acknowledgement already given is kept.
 type ObligationChangedConsumer struct {
 	reconciler AckReconciler
 	cache      ObligatingInvalidator // optional
@@ -72,7 +73,7 @@ func (c *ObligationChangedConsumer) WithCacheInvalidator(inv ObligatingInvalidat
 
 // Handle processes a single raw AMQP message body (JSON obligationChangedEvent).
 // It is idempotent: re-delivery re-runs the reconcile, which is a no-op once the
-// orphaned acks are gone.
+// dropped pending entries are released.
 func (c *ObligationChangedConsumer) Handle(ctx context.Context, body []byte) error {
 	var evt obligationChangedEvent
 	if err := json.Unmarshal(body, &evt); err != nil {

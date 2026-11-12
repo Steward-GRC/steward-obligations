@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	authz "github.com/Steward-GRC/steward-authz"
+	corev1 "github.com/Steward-GRC/steward-obligations/gen/go/thirdparty/core/v1"
 	"github.com/Steward-GRC/steward-obligations/internal/consumer"
 	"github.com/Steward-GRC/steward-obligations/internal/notify"
 	"github.com/Steward-GRC/steward-obligations/internal/obligation"
@@ -118,10 +118,12 @@ type fakeIdentity struct {
 	roles map[string][]string
 	// readSensitive maps userID -> individual read_sensitive grant.
 	readSensitive map[string]bool
+	// root maps userID -> the root seat (identity's is_root flag).
+	root map[string]bool
 }
 
-func (f *fakeIdentity) UserReadClearance(ctx context.Context, userID string) ([]string, bool, error) {
-	return f.roles[userID], f.readSensitive[userID], nil
+func (f *fakeIdentity) UserReadClearance(ctx context.Context, userID string) ([]string, bool, bool, error) {
+	return f.roles[userID], f.readSensitive[userID], f.root[userID], nil
 }
 
 func (f *fakeIdentity) UserAdGroups(ctx context.Context, userID string) ([]string, error) {
@@ -143,13 +145,13 @@ func (f *fakeIdentity) ListAllUsers(ctx context.Context) ([]obligation.User, err
 }
 
 // fakeChains fakes the categoryChains interface.
-// chains maps categoryID -> []authz.CategoryRuleset (the pre-built chain for
-// that category, as if BuildCategoryChain walked the lineage).
+// chains maps categoryID -> []*corev1.EffectiveLevel (the pre-built chain for
+// that category, as GetEffectiveRuleset answers it, nearest level first).
 type fakeChains struct {
-	chains map[string][]authz.CategoryRuleset
+	chains map[string][]*corev1.EffectiveLevel
 }
 
-func (f *fakeChains) BuildCategoryChain(ctx context.Context, categoryID string) ([]authz.CategoryRuleset, error) {
+func (f *fakeChains) EffectiveLevels(ctx context.Context, categoryID string) ([]*corev1.EffectiveLevel, error) {
 	if f.chains == nil {
 		return nil, nil
 	}
@@ -241,60 +243,49 @@ func (f *fakeAcks) VersionsAckedByUser(ctx context.Context, userID string) ([]st
 }
 
 // ---------------------------------------------------------------------------
-// RACI chain helpers — build authz.CategoryRuleset slices for common scenarios.
+// Category rule helpers: build core's EffectiveLevel chains (nearest first),
+// the shape GetEffectiveRuleset answers.
 // ---------------------------------------------------------------------------
 
-// everyoneAckChain builds a single-category chain with an everyone rule that
-// allows both read and ack — the "all users must ack" scenario.
-func everyoneAckChain(name string) []authz.CategoryRuleset {
-	return []authz.CategoryRuleset{{
-		Name: name,
-		Rules: []authz.Rule{{
-			Subject: authz.RuleSubject{Kind: authz.SubjectEveryone},
-			Grants: map[authz.Action]authz.Grant{
-				authz.ActionRead:        authz.GrantAllow,
-				authz.ActionAcknowledge: authz.GrantAllow,
-			},
-		}},
-	}}
+const (
+	allow = corev1.GrantEffect_GRANT_EFFECT_ALLOW
+	deny  = corev1.GrantEffect_GRANT_EFFECT_DENY
+	blank = corev1.GrantEffect_GRANT_EFFECT_UNSPECIFIED
+)
+
+// everyoneRule, groupRule and userRule are one row each: read and ack cells.
+func everyoneRule(read, ack corev1.GrantEffect) *corev1.CategoryRule {
+	return &corev1.CategoryRule{SubjectKind: corev1.RuleSubjectKind_RULE_SUBJECT_KIND_EVERYONE, Read: read, Ack: ack}
+}
+
+func groupRule(g string, read, ack corev1.GrantEffect) *corev1.CategoryRule {
+	return &corev1.CategoryRule{SubjectKind: corev1.RuleSubjectKind_RULE_SUBJECT_KIND_GROUP, SubjectRef: g, Read: read, Ack: ack}
+}
+
+func userRule(u string, read, ack corev1.GrantEffect) *corev1.CategoryRule {
+	return &corev1.CategoryRule{SubjectKind: corev1.RuleSubjectKind_RULE_SUBJECT_KIND_USER, SubjectRef: u, Read: read, Ack: ack}
+}
+
+// level is one category of a chain.
+func level(id string, owners []string, rules ...*corev1.CategoryRule) *corev1.EffectiveLevel {
+	return &corev1.EffectiveLevel{CategoryId: id, Name: id, Owners: owners, Rules: rules}
+}
+
+// everyoneAckChain builds a single-category chain with an Everyone row that
+// allows both read and ack: the "all users must ack" scenario.
+func everyoneAckChain(name string) []*corev1.EffectiveLevel {
+	return []*corev1.EffectiveLevel{level(name, nil, everyoneRule(allow, allow))}
 }
 
 // groupAckChain builds a single-category chain where group g gets read+ack.
-func groupAckChain(name, g string) []authz.CategoryRuleset {
-	return []authz.CategoryRuleset{{
-		Name: name,
-		Rules: []authz.Rule{{
-			Subject: authz.RuleSubject{Kind: authz.SubjectGroup, Name: g},
-			Grants: map[authz.Action]authz.Grant{
-				authz.ActionRead:        authz.GrantAllow,
-				authz.ActionAcknowledge: authz.GrantAllow,
-			},
-		}},
-	}}
+func groupAckChain(name, g string) []*corev1.EffectiveLevel {
+	return []*corev1.EffectiveLevel{level(name, nil, groupRule(g, allow, allow))}
 }
 
-// userDenyChain builds a single-category chain where user u is absolutely
-// denied read and ack (the RACI replacement for group exclusion).
-func userDenyChain(name, userID string) []authz.CategoryRuleset {
-	return []authz.CategoryRuleset{{
-		Name: name,
-		Rules: []authz.Rule{
-			{
-				Subject: authz.RuleSubject{Kind: authz.SubjectUser, Name: userID},
-				Grants: map[authz.Action]authz.Grant{
-					authz.ActionRead:        authz.GrantDeny,
-					authz.ActionAcknowledge: authz.GrantDeny,
-				},
-			},
-			{
-				Subject: authz.RuleSubject{Kind: authz.SubjectEveryone},
-				Grants: map[authz.Action]authz.Grant{
-					authz.ActionRead:        authz.GrantAllow,
-					authz.ActionAcknowledge: authz.GrantAllow,
-				},
-			},
-		},
-	}}
+// userDenyChain builds a single-category chain where user u is denied read and
+// ack by a row above the Everyone row that allows both.
+func userDenyChain(name, userID string) []*corev1.EffectiveLevel {
+	return []*corev1.EffectiveLevel{level(name, nil, userRule(userID, deny, deny), everyoneRule(allow, allow))}
 }
 
 // ---------------------------------------------------------------------------
@@ -317,7 +308,7 @@ func TestMyObligations_MembershipAndAckKeying(t *testing.T) {
 		homeGroups:    map[string]string{"p1": "grp-a", "p2": "grp-z"},
 		policyNumbers: map[string]string{"p1": "POL-001", "p2": "POL-002"},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-a": groupAckChain("GroupA", "AD-A"),
 		"grp-z": groupAckChain("GroupZ", "AD-Z"),
 	}}
@@ -354,7 +345,7 @@ func TestMyObligations_EveryoneObligatesNonMember(t *testing.T) {
 		homeGroups:    map[string]string{"pe": "grp-everyone", "pn": "grp-x"},
 		policyNumbers: map[string]string{"pe": "POL-E", "pn": "POL-N"},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-everyone": everyoneAckChain("Everyone"),
 		"grp-x":        groupAckChain("GroupX", "AD-X"),
 	}}
@@ -401,7 +392,7 @@ func TestMyObligations_SensitivePolicyNotObligatedWithoutClearance(t *testing.T)
 		policyNumbers: map[string]string{"ps": "POL-INFOSE-000002", "pn": "POL-STD-1"},
 		sensitive:     map[string]bool{"ps": true}, // pn defaults to false (standard)
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-everyone": everyoneAckChain("Everyone"),
 	}}
 	// u1: groupless, plain reader (no roles), no individual read_sensitive grant.
@@ -441,7 +432,7 @@ func TestMyObligations_SensitivePolicyObligatedWithClearance(t *testing.T) {
 			sensitive:     map[string]bool{"ps": true},
 		}
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-everyone": everyoneAckChain("Everyone"),
 	}}
 
@@ -484,7 +475,7 @@ func TestAudienceUsers_SensitivePolicyGatesUnclearedReaders(t *testing.T) {
 		policyNumbers: map[string]string{"ps": "POL-INFOSE-000002"},
 		sensitive:     map[string]bool{"ps": true},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-everyone": everyoneAckChain("Everyone"),
 	}}
 	idn := &fakeIdentity{
@@ -514,7 +505,7 @@ func TestMyObligations_ExcludedFromGroupDropsObligation(t *testing.T) {
 		policyNumbers: map[string]string{"pe": "POL-FACILITIES-1"},
 	}
 	// Chain: u1 is explicitly denied read+ack; everyone else gets read+ack.
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-facilities": userDenyChain("Facilities", "u1"),
 	}}
 	idn := &fakeIdentity{
@@ -555,7 +546,7 @@ func TestMyObligations_PolicyOverridePrecedence_Deny(t *testing.T) {
 		homeGroups:    map[string]string{"pe": "grp-facilities"},
 		policyNumbers: map[string]string{"pe": "POL-FACILITIES-1"},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-facilities": everyoneAckChain("Facilities"),
 	}}
 	idn := &fakeIdentity{
@@ -596,7 +587,7 @@ func TestMyObligations_PolicyOverridePrecedence_AllowWithAckRule(t *testing.T) {
 	// → not allowed. So a user with a deny rule AND an allow override has NO obligation
 	// (the deny rule blocks AckGrant). This is the correct behavior.
 	// For the allow-with-matching-ack-rule case, we use a chain with only everyone-ack.
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-facilities": userDenyChain("Facilities", "u1"),
 	}}
 	idn := &fakeIdentity{
@@ -639,17 +630,8 @@ func TestMyObligations_OverrideAllow_NoMatchingAckRule(t *testing.T) {
 		policyNumbers: map[string]string{"pe": "POL-IT-1"},
 	}
 	// Chain: read-only rule for group AD-IT. No ack grant for anyone.
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
-		"grp-it": {{
-			Name: "IT",
-			Rules: []authz.Rule{{
-				Subject: authz.RuleSubject{Kind: authz.SubjectGroup, Name: "AD-IT"},
-				Grants: map[authz.Action]authz.Grant{
-					authz.ActionRead: authz.GrantAllow,
-					// no ack grant
-				},
-			}},
-		}},
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
+		"grp-it": {level("IT", nil, groupRule("AD-IT", allow, blank))}, // no ack cell
 	}}
 	idn := &fakeIdentity{
 		adGroups: map[string][]string{"u1": {}}, // not in AD-IT
@@ -683,17 +665,8 @@ func TestMyObligations_OverrideAllow_EveryoneAckRule(t *testing.T) {
 	// Chain: only ack grant for everyone, no read grant for u1.
 	// Resolve(u1).Ack would fail (no read → requires read gate fails).
 	// But AckGrant(u1) succeeds because the everyone-ack rule matches.
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
-		"grp-it": {{
-			Name: "IT",
-			Rules: []authz.Rule{{
-				Subject: authz.RuleSubject{Kind: authz.SubjectEveryone},
-				Grants: map[authz.Action]authz.Grant{
-					authz.ActionAcknowledge: authz.GrantAllow,
-					// no read grant
-				},
-			}},
-		}},
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
+		"grp-it": {level("IT", nil, everyoneRule(blank, allow))}, // no read cell
 	}}
 	idn := &fakeIdentity{
 		adGroups: map[string][]string{"u1": {}},
@@ -724,12 +697,8 @@ func TestMyObligations_OwnerDoesNotAutoAck(t *testing.T) {
 		policyNumbers: map[string]string{"p1": "POL-001"},
 	}
 	// Chain: u1 is an owner. No ack rule for u1 or everyone.
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
-		"grp-it": {{
-			Name:   "IT",
-			Owners: []string{"u1"},
-			Rules:  nil, // no ack rule
-		}},
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
+		"grp-it": {level("IT", []string{"u1"})}, // no ack rule
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {}}}
 	r := obligation.NewResolver(core, idn, chains, &fakeAcks{}, nil)
@@ -755,7 +724,7 @@ func TestMyObligations_SiteAdminMeritOnly(t *testing.T) {
 		homeGroups:    map[string]string{"p1": "grp-it"},
 		policyNumbers: map[string]string{"p1": "POL-001"},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-it": groupAckChain("IT", "AD-STAFF"),
 	}}
 	// u1 has no AD-STAFF membership — if site-admin bypass were applied they
@@ -786,7 +755,7 @@ func TestMyObligations_OnPublishKeyingClearsWithAnyVersion(t *testing.T) {
 		// core knows p1 has two versions; v1b is the currently published one.
 		policyVersions: map[string][]string{"p1": {"v1a", "v1b"}},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-a": groupAckChain("GroupA", "AD-A"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-A"}}}
@@ -816,7 +785,7 @@ func TestMyObligations_OnPublishNewVersionDoesNotReObligate(t *testing.T) {
 		policyNumbers:  map[string]string{"p1": "POL-001"},
 		policyVersions: map[string][]string{"p1": {"v1a", "v1b", "v1c"}},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-a": groupAckChain("GroupA", "AD-A"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-A"}}}
@@ -844,7 +813,7 @@ func TestMyObligations_NoMembershipMatch(t *testing.T) {
 		homeGroups:    map[string]string{"p1": "grp-z"},
 		policyNumbers: map[string]string{"p1": "POL-001"},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-z": groupAckChain("GroupZ", "AD-Z"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-A"}}}
@@ -859,11 +828,12 @@ func TestMyObligations_NoMembershipMatch(t *testing.T) {
 	}
 }
 
-// TestMyObligations_CaseInsensitiveAudienceMatch verifies that group-name
-// matching is case-insensitive: the authz engine's subjectMatches uses
-// strings.EqualFold so a rule subject "Facilities team" matches a user whose AD group
-// name is "facilities team" (and vice-versa).
-func TestMyObligations_CaseInsensitiveAudienceMatch(t *testing.T) {
+// TestMyObligations_GroupMatchIsExact verifies that group-name matching is the
+// ordered engine's: exact, as the gateway's read decision is. A rule subject
+// "Facilities team" does not match a directory group "facilities team", so the
+// two services agree on who may read (and so who is asked). The previous
+// engine folded case; this is a deliberate change.
+func TestMyObligations_GroupMatchIsExact(t *testing.T) {
 	core := &fakeCore{
 		obligating: []obligation.ObligatingPolicy{
 			{PolicyID: "p1", Number: "POL-001", Title: "Security Policy", VersionNo: 1, PublishedVersionID: "v1", OnChange: false},
@@ -871,25 +841,24 @@ func TestMyObligations_CaseInsensitiveAudienceMatch(t *testing.T) {
 		homeGroups:    map[string]string{"p1": "grp-sec"},
 		policyNumbers: map[string]string{"p1": "POL-001"},
 	}
-	// Rule subject uses title-case "Facilities team"; user's directory group
-	// federation is lower-case "facilities team". The authz engine matches via EqualFold.
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-sec": groupAckChain("Security", "Facilities team"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{
-		"u1": {"facilities team"},
+		"u1": {"facilities team"}, // different case: no match
+		"u2": {"Facilities team"}, // exact: match
 	}}
-	acks := &fakeAcks{acked: map[string]map[string]bool{}}
-	r := obligation.NewResolver(core, idn, chains, acks, nil)
-	got, err := r.MyObligations(context.Background(), "u1")
+	r := obligation.NewResolver(core, idn, chains, &fakeAcks{acked: map[string]map[string]bool{}}, nil)
+
+	if got, err := r.MyObligations(context.Background(), "u1"); err != nil || len(got) != 0 {
+		t.Fatalf("a group in another case must not match: got %+v, err %v", got, err)
+	}
+	got, err := r.MyObligations(context.Background(), "u2")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("want 1 obligation (case-insensitive group match), got %d: %+v", len(got), got)
-	}
-	if got[0].PolicyID != "p1" {
-		t.Errorf("want PolicyID p1, got %q", got[0].PolicyID)
+	if len(got) != 1 || got[0].PolicyID != "p1" {
+		t.Fatalf("an exact group match must oblige: got %+v", got)
 	}
 }
 
@@ -903,7 +872,7 @@ func TestMyObligations_OnChangeCurrentVersionAcked(t *testing.T) {
 		homeGroups:    map[string]string{"p1": "grp-a"},
 		policyNumbers: map[string]string{"p1": "POL-001"},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-a": groupAckChain("GroupA", "AD-A"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-A"}}}
@@ -959,7 +928,7 @@ func mixedFixture() (*obligation.Resolver, *fakeAcks) {
 			"p4": {"v4a"},
 		},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-a": groupAckChain("GroupA", "AD-A"),
 		"grp-z": groupAckChain("GroupZ", "AD-Z"),
 	}}
@@ -1081,7 +1050,7 @@ func TestCompletion_ResolvesPolicyFromVersion(t *testing.T) {
 			"p1": {RequiresAck: true, PublishedVersionID: "pv1"},
 		},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-a": groupAckChain("GroupA", "AD-A"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{
@@ -1120,7 +1089,7 @@ func TestCompletion_PartialAck(t *testing.T) {
 			"p1": {RequiresAck: true, PublishedVersionID: "pv1"},
 		},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-a": groupAckChain("GroupA", "AD-A"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{
@@ -1162,7 +1131,7 @@ func TestCompletion_AllAcked(t *testing.T) {
 			"p1": {RequiresAck: true, PublishedVersionID: "pv1"},
 		},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-a": groupAckChain("GroupA", "AD-A"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{
@@ -1200,7 +1169,7 @@ func TestCompletion_AckedUserLeftAudience(t *testing.T) {
 			"p1": {RequiresAck: true, PublishedVersionID: "pv1"},
 		},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-a": groupAckChain("GroupA", "AD-A"),
 	}}
 	// Only u1 is in AD-A; u_gone has left (not in adGroups map).
@@ -1241,7 +1210,7 @@ func TestCompletion_NoneAcked(t *testing.T) {
 			"p1": {RequiresAck: true, PublishedVersionID: "pv2"},
 		},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-b": groupAckChain("GroupB", "AD-B"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{
@@ -1287,7 +1256,7 @@ func TestResolver_RosterActivityMetrics(t *testing.T) {
 	idn := &mIdentity{users: []obligation.User{
 		{ID: "u1", Email: "u1@example.org"}, {ID: "u2", Email: "u2@example.org"}, {ID: "u3", Email: "u3@example.org"},
 	}}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-all": everyoneAckChain("All"),
 	}}
 	acks := &mAcks{ackedAt: map[string]time.Time{
@@ -1377,8 +1346,8 @@ func (m *mIdentity) UserPolicyOverrides(context.Context, string) (map[string]str
 	return nil, nil
 }
 func (m *mIdentity) ListAllUsers(context.Context) ([]obligation.User, error) { return m.users, nil }
-func (m *mIdentity) UserReadClearance(context.Context, string) ([]string, bool, error) {
-	return nil, false, nil
+func (m *mIdentity) UserReadClearance(context.Context, string) ([]string, bool, bool, error) {
+	return nil, false, false, nil
 }
 
 type mAcks struct {
@@ -1407,156 +1376,49 @@ func (m *mAcks) RecentAcks(context.Context, string, int) ([]store.RecentAck, err
 func (m *mAcks) VersionsAckedByUser(context.Context, string) ([]string, error) { return nil, nil }
 
 // ---------------------------------------------------------------------------
-// PurgeOrphanedAcks / ReconcilePolicyAcks (obligation-removal purge)
+// ReleaseDroppedPending / ReconcilePolicyAcks / ReconcileUserAcks
+//
+// A person who drops out of a version's ack audience stops owing it: their
+// pending state is removed. An acknowledgement already given is an attestation
+// and is kept, whoever is in the audience now.
 // ---------------------------------------------------------------------------
 
-// When a policy's ack requirement is turned OFF, the audience is empty, so
-// EVERY existing ack for the version is orphaned and purged.
-func TestPurgeOrphanedAcks_RequirementOff_PurgesAll(t *testing.T) {
-	core := &fakeCore{
-		resolutions:     map[string]obligation.PolicyObligation{"p1": {RequiresAck: false}},
-		versionToPolicy: map[string]string{"v1": "p1"},
-		homeGroups:      map[string]string{"p1": "grp-it"},
-		policyNumbers:   map[string]string{"p1": "POL-001"},
-	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
-		"grp-it": groupAckChain("IT", "AD-IT"),
-	}}
-	acks := &fakeAcks{ackedUsers: map[string][]string{"v1": {"u1", "u2"}}}
-	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-IT"}, "u2": {"AD-IT"}}}
-	r := obligation.NewResolver(core, idn, chains, acks, nil)
-
-	n, err := r.PurgeOrphanedAcks(context.Background(), "v1")
-	if err != nil {
-		t.Fatalf("PurgeOrphanedAcks: %v", err)
-	}
-	if n != 2 {
-		t.Fatalf("want 2 acks purged, got %d", n)
-	}
-	if len(acks.ackedUsers["v1"]) != 0 {
-		t.Fatalf("want no acks remaining, got %v", acks.ackedUsers["v1"])
-	}
+// fakePending fakes the pendingStore: per version, the users who have pending
+// ack state (a reminder anchor) and no acknowledgement.
+type fakePending struct {
+	pending map[string][]string // versionID -> userIDs
+	deleted map[string][]string // versionID -> userIDs released
 }
 
-// A user who is no longer in the audience (RACI chain gives no ack) is purged;
-// a still-obligated member is kept.
-func TestPurgeOrphanedAcks_LeftAudience_PurgesOnlyOrphan(t *testing.T) {
-	core := &fakeCore{
-		resolutions: map[string]obligation.PolicyObligation{
-			"p1": {RequiresAck: true},
-		},
-		versionToPolicy: map[string]string{"v1": "p1"},
-		homeGroups:      map[string]string{"p1": "grp-it"},
-		policyNumbers:   map[string]string{"p1": "POL-001"},
-	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
-		"grp-it": groupAckChain("IT", "AD-IT"),
-	}}
-	// u1 is still in AD-IT; u2 has left (no groups) but still has a stale ack.
-	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-IT"}, "u2": {}}}
-	acks := &fakeAcks{ackedUsers: map[string][]string{"v1": {"u1", "u2"}}}
-	r := obligation.NewResolver(core, idn, chains, acks, nil)
-
-	n, err := r.PurgeOrphanedAcks(context.Background(), "v1")
-	if err != nil {
-		t.Fatalf("PurgeOrphanedAcks: %v", err)
-	}
-	if n != 1 {
-		t.Fatalf("want 1 ack purged (u2), got %d", n)
-	}
-	if got := acks.ackedUsers["v1"]; len(got) != 1 || got[0] != "u1" {
-		t.Fatalf("want only u1 remaining, got %v", got)
-	}
+func (f *fakePending) PendingUserIDsForVersion(ctx context.Context, versionID string) ([]string, error) {
+	return slices.Clone(f.pending[versionID]), nil
 }
 
-// An everyone-ack chain keeps every user's ack (all users are obligated), so
-// nothing is purged.
-func TestPurgeOrphanedAcks_Everyone_PurgesNothing(t *testing.T) {
-	core := &fakeCore{
-		resolutions:     map[string]obligation.PolicyObligation{"p1": {RequiresAck: true}},
-		versionToPolicy: map[string]string{"v1": "p1"},
-		homeGroups:      map[string]string{"p1": "grp-all"},
-		policyNumbers:   map[string]string{"p1": "POL-001"},
+func (f *fakePending) VersionsPendingForUser(ctx context.Context, userID string) ([]string, error) {
+	var out []string
+	for v, users := range f.pending {
+		if slices.Contains(users, userID) {
+			out = append(out, v)
+		}
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
-		"grp-all": everyoneAckChain("All"),
-	}}
-	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {}, "u2": {}}}
-	acks := &fakeAcks{ackedUsers: map[string][]string{"v1": {"u1", "u2"}}}
-	r := obligation.NewResolver(core, idn, chains, acks, nil)
-
-	n, err := r.PurgeOrphanedAcks(context.Background(), "v1")
-	if err != nil {
-		t.Fatalf("PurgeOrphanedAcks: %v", err)
-	}
-	if n != 0 {
-		t.Fatalf("want 0 purged for Everyone chain, got %d", n)
-	}
+	sort.Strings(out)
+	return out, nil
 }
 
-// ReconcileUserAcks purges only the user's orphaned acks: v1 (AD-IT, user not a
-// member) is purged; v2 (everyone chain, user still obligated) is kept.
-func TestReconcileUserAcks_PurgesOnlyOrphaned(t *testing.T) {
-	core := &fakeCore{
-		resolutions: map[string]obligation.PolicyObligation{
-			"p1": {RequiresAck: true},
-			"p2": {RequiresAck: true},
-		},
-		versionToPolicy: map[string]string{"v1": "p1", "v2": "p2"},
-		homeGroups:      map[string]string{"p1": "grp-it", "p2": "grp-all"},
-		policyNumbers:   map[string]string{"p1": "POL-001", "p2": "POL-002"},
+func (f *fakePending) DeletePending(ctx context.Context, versionID string, userIDs []string) (int, error) {
+	if f.deleted == nil {
+		f.deleted = map[string][]string{}
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
-		"grp-it":  groupAckChain("IT", "AD-IT"),
-		"grp-all": everyoneAckChain("All"),
-	}}
-	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-IT"}, "u2": {}}}
-	acks := &fakeAcks{ackedUsers: map[string][]string{"v1": {"u2"}, "v2": {"u2"}}}
-	r := obligation.NewResolver(core, idn, chains, acks, nil)
-
-	n, err := r.ReconcileUserAcks(context.Background(), "u2")
-	if err != nil {
-		t.Fatalf("ReconcileUserAcks: %v", err)
+	n := 0
+	for _, u := range userIDs {
+		if i := slices.Index(f.pending[versionID], u); i >= 0 {
+			f.pending[versionID] = slices.Delete(f.pending[versionID], i, i+1)
+			f.deleted[versionID] = append(f.deleted[versionID], u)
+			n++
+		}
 	}
-	if n != 1 {
-		t.Fatalf("want 1 purged (u2's v1 ack), got %d", n)
-	}
-	if len(acks.ackedUsers["v1"]) != 0 {
-		t.Fatalf("want v1 ack purged, got %v", acks.ackedUsers["v1"])
-	}
-	if len(acks.ackedUsers["v2"]) != 1 {
-		t.Fatalf("want v2 ack kept (everyone chain), got %v", acks.ackedUsers["v2"])
-	}
+	return n, nil
 }
-
-// ReconcilePolicyAcks purges orphaned acks across all versions of the policy.
-func TestReconcilePolicyAcks_AllVersions(t *testing.T) {
-	core := &fakeCore{
-		resolutions:     map[string]obligation.PolicyObligation{"p1": {RequiresAck: false}},
-		versionToPolicy: map[string]string{"v1": "p1", "v2": "p1"},
-		policyVersions:  map[string][]string{"p1": {"v1", "v2"}},
-		homeGroups:      map[string]string{"p1": "grp-it"},
-		policyNumbers:   map[string]string{"p1": "POL-001"},
-	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
-		"grp-it": groupAckChain("IT", "AD-IT"),
-	}}
-	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-IT"}, "u2": {"AD-IT"}, "u3": {"AD-IT"}}}
-	acks := &fakeAcks{ackedUsers: map[string][]string{"v1": {"u1"}, "v2": {"u2", "u3"}}}
-	r := obligation.NewResolver(core, idn, chains, acks, nil)
-
-	n, err := r.ReconcilePolicyAcks(context.Background(), "p1")
-	if err != nil {
-		t.Fatalf("ReconcilePolicyAcks: %v", err)
-	}
-	if n != 3 {
-		t.Fatalf("want 3 acks purged across versions, got %d", n)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// PurgeOrphanedAcks — nil-chain / empty-homeGroup fail-safe
-// ---------------------------------------------------------------------------
 
 // trackingAcks wraps fakeAcks and records whether DeleteAcksForUsers was called.
 type trackingAcks struct {
@@ -1569,61 +1431,194 @@ func (t *trackingAcks) DeleteAcksForUsers(ctx context.Context, policyVersionID s
 	return t.fakeAcks.DeleteAcksForUsers(ctx, policyVersionID, userIDs)
 }
 
-// TestPurgeOrphanedAcks_EmptyHomeGroup_ErrorsNotDeletes verifies that when a
-// policy has no home group (hg == ""), audienceUsers returns an error and the
-// purge path does NOT call DeleteAcksForUsers — guarding against silent
-// mass-delete of valid acks.
-func TestPurgeOrphanedAcks_EmptyHomeGroup_ErrorsNotDeletes(t *testing.T) {
+func releaseFixture() (*fakeCore, *fakeChains) {
 	core := &fakeCore{
-		resolutions: map[string]obligation.PolicyObligation{
-			"p1": {RequiresAck: true},
-		},
+		resolutions:     map[string]obligation.PolicyObligation{"p1": {RequiresAck: true}},
 		versionToPolicy: map[string]string{"v1": "p1"},
-		// homeGroups deliberately absent for p1 — PolicyHomeGroup returns ""
-		homeGroups:    map[string]string{},
-		policyNumbers: map[string]string{"p1": "POL-001"},
-	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{}}
-	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-IT"}, "u2": {"AD-IT"}}}
-	tr := &trackingAcks{
-		fakeAcks: fakeAcks{ackedUsers: map[string][]string{"v1": {"u1", "u2"}}},
-	}
-	r := obligation.NewResolver(core, idn, chains, tr, nil)
-
-	_, err := r.PurgeOrphanedAcks(context.Background(), "v1")
-	if err == nil {
-		t.Fatal("want error when policy has no home group; got nil — audience is empty and would mass-delete acks")
-	}
-	if tr.deleteCalled {
-		t.Error("DeleteAcksForUsers must NOT be called when audience resolution errors")
-	}
-}
-
-// TestPurgeOrphanedAcks_NilChains_ErrorsNotDeletes verifies that when r.chains
-// is nil, audienceUsers returns an error rather than producing an empty audience
-// that would cause all existing acks to be treated as orphaned.
-func TestPurgeOrphanedAcks_NilChains_ErrorsNotDeletes(t *testing.T) {
-	core := &fakeCore{
-		resolutions: map[string]obligation.PolicyObligation{
-			"p1": {RequiresAck: true},
-		},
-		versionToPolicy: map[string]string{"v1": "p1"},
+		policyVersions:  map[string][]string{"p1": {"v1"}},
 		homeGroups:      map[string]string{"p1": "grp-it"},
 		policyNumbers:   map[string]string{"p1": "POL-001"},
 	}
-	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-IT"}, "u2": {"AD-IT"}}}
-	tr := &trackingAcks{
-		fakeAcks: fakeAcks{ackedUsers: map[string][]string{"v1": {"u1", "u2"}}},
-	}
-	// chains == nil — simulates a misconfigured resolver
-	r := obligation.NewResolver(core, idn, nil, tr, nil)
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
+		"grp-it": groupAckChain("IT", "AD-IT"),
+	}}
+	return core, chains
+}
 
-	_, err := r.PurgeOrphanedAcks(context.Background(), "v1")
-	if err == nil {
-		t.Fatal("want error when chains is nil; got nil — audience is empty and would mass-delete acks")
+// A person who left the audience and had not acknowledged has their pending
+// state released; a person still in the audience keeps theirs; a person who
+// left but HAD acknowledged keeps the acknowledgement (D5).
+func TestReleaseDroppedPending_RemovesPendingKeepsGivenAcks(t *testing.T) {
+	core, chains := releaseFixture()
+	// u1 still in AD-IT (pending), u2 left (pending), u3 left and acked.
+	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-IT"}, "u2": {}, "u3": {}}}
+	acks := &trackingAcks{fakeAcks: fakeAcks{
+		acked:      map[string]map[string]bool{"u3": {"v1": true}},
+		ackedUsers: map[string][]string{"v1": {"u3"}},
+	}}
+	pend := &fakePending{pending: map[string][]string{"v1": {"u1", "u2"}}}
+	r := obligation.NewResolver(core, idn, chains, acks, nil).WithPendingStore(pend)
+
+	n, err := r.ReleaseDroppedPending(context.Background(), "v1")
+	if err != nil {
+		t.Fatalf("ReleaseDroppedPending: %v", err)
 	}
-	if tr.deleteCalled {
-		t.Error("DeleteAcksForUsers must NOT be called when audience resolution errors")
+	if n != 1 {
+		t.Fatalf("want 1 pending released (u2), got %d", n)
+	}
+	if got := pend.pending["v1"]; !reflect.DeepEqual(got, []string{"u1"}) {
+		t.Fatalf("want only u1 still pending, got %v", got)
+	}
+	if acks.deleteCalled {
+		t.Fatal("a given acknowledgement must never be deleted")
+	}
+	if got := acks.ackedUsers["v1"]; !reflect.DeepEqual(got, []string{"u3"}) {
+		t.Fatalf("u3's acknowledgement must be kept, got %v", got)
+	}
+}
+
+// When the ack requirement is off the audience is empty: every pending entry
+// is released and every given acknowledgement stays.
+func TestReleaseDroppedPending_RequirementOff_ReleasesAllPending(t *testing.T) {
+	core, chains := releaseFixture()
+	core.resolutions["p1"] = obligation.PolicyObligation{RequiresAck: false}
+	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-IT"}, "u2": {"AD-IT"}}}
+	acks := &trackingAcks{fakeAcks: fakeAcks{ackedUsers: map[string][]string{"v1": {"u3"}}}}
+	pend := &fakePending{pending: map[string][]string{"v1": {"u1", "u2"}}}
+	r := obligation.NewResolver(core, idn, chains, acks, nil).WithPendingStore(pend)
+
+	n, err := r.ReleaseDroppedPending(context.Background(), "v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 || len(pend.pending["v1"]) != 0 {
+		t.Fatalf("want 2 released and none left, got n=%d left=%v", n, pend.pending["v1"])
+	}
+	if acks.deleteCalled || len(acks.ackedUsers["v1"]) != 1 {
+		t.Fatal("given acknowledgements must be kept")
+	}
+}
+
+// An Everyone chain keeps every user in the audience, so nothing is released.
+func TestReleaseDroppedPending_Everyone_ReleasesNothing(t *testing.T) {
+	core, _ := releaseFixture()
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{"grp-it": everyoneAckChain("All")}}
+	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {}, "u2": {}}}
+	pend := &fakePending{pending: map[string][]string{"v1": {"u1", "u2"}}}
+	r := obligation.NewResolver(core, idn, chains, &fakeAcks{}, nil).WithPendingStore(pend)
+
+	n, err := r.ReleaseDroppedPending(context.Background(), "v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("want 0 released, got %d", n)
+	}
+}
+
+// ReconcileUserAcks releases the user's pending state on the versions they no
+// longer owe; v1 (AD-IT, user not a member) goes, v2 (Everyone) stays.
+func TestReconcileUserAcks_ReleasesOnlyDroppedPending(t *testing.T) {
+	core := &fakeCore{
+		resolutions: map[string]obligation.PolicyObligation{
+			"p1": {RequiresAck: true},
+			"p2": {RequiresAck: true},
+		},
+		versionToPolicy: map[string]string{"v1": "p1", "v2": "p2"},
+		homeGroups:      map[string]string{"p1": "grp-it", "p2": "grp-all"},
+		policyNumbers:   map[string]string{"p1": "POL-001", "p2": "POL-002"},
+	}
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
+		"grp-it":  groupAckChain("IT", "AD-IT"),
+		"grp-all": everyoneAckChain("All"),
+	}}
+	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-IT"}, "u2": {}}}
+	acks := &trackingAcks{fakeAcks: fakeAcks{ackedUsers: map[string][]string{"v1": {"u2"}, "v2": {"u2"}}}}
+	pend := &fakePending{pending: map[string][]string{"v1": {"u2"}, "v2": {"u2"}}}
+	r := obligation.NewResolver(core, idn, chains, acks, nil).WithPendingStore(pend)
+
+	n, err := r.ReconcileUserAcks(context.Background(), "u2")
+	if err != nil {
+		t.Fatalf("ReconcileUserAcks: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("want 1 released (u2 on v1), got %d", n)
+	}
+	if len(pend.pending["v1"]) != 0 || len(pend.pending["v2"]) != 1 {
+		t.Fatalf("want v1 released and v2 kept, got %v", pend.pending)
+	}
+	if acks.deleteCalled {
+		t.Fatal("a given acknowledgement must never be deleted")
+	}
+}
+
+// ReconcilePolicyAcks releases dropped pending state across all versions.
+func TestReconcilePolicyAcks_AllVersions(t *testing.T) {
+	core := &fakeCore{
+		resolutions:     map[string]obligation.PolicyObligation{"p1": {RequiresAck: false}},
+		versionToPolicy: map[string]string{"v1": "p1", "v2": "p1"},
+		policyVersions:  map[string][]string{"p1": {"v1", "v2"}},
+		homeGroups:      map[string]string{"p1": "grp-it"},
+		policyNumbers:   map[string]string{"p1": "POL-001"},
+	}
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
+		"grp-it": groupAckChain("IT", "AD-IT"),
+	}}
+	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-IT"}, "u2": {"AD-IT"}, "u3": {"AD-IT"}}}
+	acks := &trackingAcks{fakeAcks: fakeAcks{ackedUsers: map[string][]string{"v1": {"u1"}, "v2": {"u2", "u3"}}}}
+	pend := &fakePending{pending: map[string][]string{"v1": {"u4"}, "v2": {"u5", "u6"}}}
+	r := obligation.NewResolver(core, idn, chains, acks, nil).WithPendingStore(pend)
+
+	n, err := r.ReconcilePolicyAcks(context.Background(), "p1")
+	if err != nil {
+		t.Fatalf("ReconcilePolicyAcks: %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("want 3 pending released across versions, got %d", n)
+	}
+	if acks.deleteCalled {
+		t.Fatal("a given acknowledgement must never be deleted")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ReleaseDroppedPending - nil-chain / empty-homeGroup fail-safe
+// ---------------------------------------------------------------------------
+
+// A policy with no home group errors rather than resolving an empty audience,
+// which would release every pending entry.
+func TestReleaseDroppedPending_EmptyHomeGroup_ErrorsNotReleases(t *testing.T) {
+	core := &fakeCore{
+		resolutions:     map[string]obligation.PolicyObligation{"p1": {RequiresAck: true}},
+		versionToPolicy: map[string]string{"v1": "p1"},
+		homeGroups:      map[string]string{}, // PolicyHomeGroup returns ""
+		policyNumbers:   map[string]string{"p1": "POL-001"},
+	}
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{}}
+	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-IT"}}}
+	pend := &fakePending{pending: map[string][]string{"v1": {"u1"}}}
+	r := obligation.NewResolver(core, idn, chains, &fakeAcks{}, nil).WithPendingStore(pend)
+
+	if _, err := r.ReleaseDroppedPending(context.Background(), "v1"); err == nil {
+		t.Fatal("want error when the policy has no home group")
+	}
+	if len(pend.deleted) != 0 {
+		t.Error("nothing may be released when audience resolution errors")
+	}
+}
+
+// A nil chain source errors rather than producing an empty audience.
+func TestReleaseDroppedPending_NilChains_ErrorsNotReleases(t *testing.T) {
+	core, _ := releaseFixture()
+	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-IT"}}}
+	pend := &fakePending{pending: map[string][]string{"v1": {"u1"}}}
+	r := obligation.NewResolver(core, idn, nil, &fakeAcks{}, nil).WithPendingStore(pend)
+
+	if _, err := r.ReleaseDroppedPending(context.Background(), "v1"); err == nil {
+		t.Fatal("want error when chains is nil")
+	}
+	if len(pend.deleted) != 0 {
+		t.Error("nothing may be released when audience resolution errors")
 	}
 }
 
@@ -1652,7 +1647,7 @@ func TestAudienceUsers_EveryoneAckObligatesAllReaders(t *testing.T) {
 		homeGroups:    map[string]string{"p1": "grp-all"},
 		policyNumbers: map[string]string{"p1": "POL-ALL"},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-all": everyoneAckChain("All"),
 	}}
 	// u3 belongs to no group at all — the everyone rule must still obligate it.
@@ -1678,7 +1673,7 @@ func TestAudienceUsers_DeniedReadExcluded(t *testing.T) {
 		homeGroups:    map[string]string{"p1": "grp-med"},
 		policyNumbers: map[string]string{"p1": "POL-MED"},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-med": userDenyChain("Facilities", "u-denied"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{
@@ -1704,18 +1699,8 @@ func TestAudienceUsers_OwnerNotAutoAcked(t *testing.T) {
 		policyNumbers: map[string]string{"p1": "POL-IT"},
 	}
 	// Chain grants ack only to AD-A; u-owner is an owner but not in AD-A.
-	chain := []authz.CategoryRuleset{{
-		Name:   "IT",
-		Owners: []string{"u-owner"},
-		Rules: []authz.Rule{{
-			Subject: authz.RuleSubject{Kind: authz.SubjectGroup, Name: "AD-A"},
-			Grants: map[authz.Action]authz.Grant{
-				authz.ActionRead:        authz.GrantAllow,
-				authz.ActionAcknowledge: authz.GrantAllow,
-			},
-		}},
-	}}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{"grp-it": chain}}
+	chain := []*corev1.EffectiveLevel{level("IT", []string{"u-owner"}, groupRule("AD-A", allow, allow))}
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{"grp-it": chain}}
 	idn := &fakeIdentity{adGroups: map[string][]string{
 		"u-member": {"AD-A"}, "u-owner": nil,
 	}}
@@ -1739,7 +1724,7 @@ func TestAudienceUsers_FailsLoudOnEmptyHomeGroup(t *testing.T) {
 		homeGroups:    map[string]string{}, // p1 absent → PolicyHomeGroup returns ""
 		policyNumbers: map[string]string{"p1": "POL-1"},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{}}
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{}}
 	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-A"}}}
 	r := obligation.NewResolver(core, idn, chains, &fakeAcks{}, nil)
 
@@ -1781,7 +1766,7 @@ func TestAudienceUsers_ProcedureExcludedFromAckAudience(t *testing.T) {
 		policyNumbers: map[string]string{"proc1": "PROC-1"},
 		docTypes:      map[string]string{"proc1": "procedure"},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-all": everyoneAckChain("All"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{
@@ -1807,7 +1792,7 @@ func TestAudienceUsers_PolicyDocTypeUnchanged(t *testing.T) {
 		policyNumbers: map[string]string{"p1": "POL-ALL"},
 		docTypes:      map[string]string{"p1": "policy"},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-all": everyoneAckChain("All"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{
@@ -1838,7 +1823,7 @@ func TestCompletion_ProcedureZeroDenominator(t *testing.T) {
 			"proc1": {RequiresAck: true, PublishedVersionID: "pv1"},
 		},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-all": everyoneAckChain("All"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-A"}, "u2": {"AD-B"}}}
@@ -1866,7 +1851,7 @@ func TestAudienceUsers_DocTypeLookupErrorPropagates(t *testing.T) {
 		policyNumbers: map[string]string{"p1": "POL-ALL"},
 		docTypeErr:    wantErr,
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-all": everyoneAckChain("All"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-A"}}}
@@ -1910,7 +1895,7 @@ func retiredEventBody(t *testing.T, policyID string) []byte {
 // PROCEDURE notifies NO ONE (the gate empties the audience), while a retired
 // POLICY under the same everyone-ack chain notifies the full audience.
 func TestPolicyRetiredConsumer_ProcedureNotifiesNoOne(t *testing.T) {
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-all": everyoneAckChain("All"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{"u1": {"AD-A"}, "u2": {"AD-B"}}}
@@ -1967,7 +1952,7 @@ func TestOutstandingObligationsAcrossUsers(t *testing.T) {
 			"p2": {"v2z", "v2a"},
 		},
 	}
-	chains := &fakeChains{chains: map[string][]authz.CategoryRuleset{
+	chains := &fakeChains{chains: map[string][]*corev1.EffectiveLevel{
 		"grp-a": groupAckChain("GroupA", "AD-A"),
 	}}
 	idn := &fakeIdentity{adGroups: map[string][]string{
