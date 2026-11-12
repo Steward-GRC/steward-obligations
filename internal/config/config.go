@@ -133,7 +133,7 @@ func Load() (Config, error) {
 		RabbitURL:     os.Getenv("RABBITMQ_URL"),
 		GRPCPort:      getOr("GRPC_PORT", "9090"),
 		ProbePort:     getOr("PROBE_PORT", "8080"),
-		OTLPEndpoint:  getOr("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317"),
+		OTLPEndpoint:  os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
 		TLS: TLS{
 			CertFile: os.Getenv("GRPC_TLS_CERT_FILE"), KeyFile: os.Getenv("GRPC_TLS_KEY_FILE"),
 			ClientCAFile: os.Getenv("GRPC_TLS_CLIENT_CA_FILE"),
