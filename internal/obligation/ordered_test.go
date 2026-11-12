@@ -140,6 +140,26 @@ func TestOrdered_NonRootSiteAdminFollowsTheRules(t *testing.T) {
 	}
 }
 
+// Root is exempt for Read, so a Read deny against it is ignored and does not
+// remove it from the audience when an Ack allow applies. A site admin who is not
+// root has no such exemption: the same Read deny removes it, because Ack
+// requires Read.
+func TestOrdered_ReadDenyRootStaysNonRootSiteAdminDrops(t *testing.T) {
+	chain := []*corev1.EffectiveLevel{level("cat", nil,
+		userRule("u-root", deny, allow),
+		userRule("u-admin", deny, allow),
+		everyoneRule(allow, allow),
+	)}
+	idn := &fakeIdentity{
+		adGroups: map[string][]string{"u-root": nil, "u-admin": nil, "u-other": nil},
+		roles:    map[string][]string{"u-admin": {"site-admin"}},
+		root:     map[string]bool{"u-root": true},
+	}
+	if got, want := audienceOf(t, chain, idn), []string{"u-other", "u-root"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("root stays (Read exempt, Ack allowed), non-root site admin drops (Read deny): want %v, got %v", want, got)
+	}
+}
+
 func TestOrdered_ManageCellConfersReadForAck(t *testing.T) {
 	// Manage implies Read, so a Manage allow lets a blank-Read row's Ack stand.
 	chain := []*corev1.EffectiveLevel{level("cat", nil,
