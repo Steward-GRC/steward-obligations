@@ -216,22 +216,6 @@ func (s *AcknowledgmentStore) VersionsAckedByUser(ctx context.Context, userID st
 	return ids, rows.Err()
 }
 
-// DeleteAcksForUsers removes ack rows for the given users on policyVersionID and
-// returns the number of rows deleted. Used by the obligation resolver to purge
-// acks that are orphaned when a user leaves a policy's obligated audience.
-func (s *AcknowledgmentStore) DeleteAcksForUsers(ctx context.Context, policyVersionID string, userIDs []string) (int, error) {
-	if len(userIDs) == 0 {
-		return 0, nil
-	}
-	tag, err := querier(ctx, s.db).Exec(ctx,
-		`DELETE FROM acknowledgments WHERE policy_version_id = $1 AND user_id = ANY($2)`,
-		policyVersionID, userIDs)
-	if err != nil {
-		return 0, err
-	}
-	return int(tag.RowsAffected()), nil
-}
-
 // AckedAtForVersion returns a map of user_id -> acked_at for every ack on the
 // given policy version. Used to compute roster acked entries and avg-days-to-ack.
 func (s *AcknowledgmentStore) AckedAtForVersion(ctx context.Context, policyVersionID string) (map[string]time.Time, error) {

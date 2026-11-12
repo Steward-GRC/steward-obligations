@@ -17,19 +17,21 @@ type membershipChangedEvent struct {
 	UserID    string `json:"user_id"`
 }
 
-// UserAckReconciler purges a single user's acks that are orphaned once their
-// group membership changes. *obligation.Resolver satisfies this interface.
+// UserAckReconciler releases a single user's pending acknowledgements once their
+// group membership changes. Acknowledgements already given are kept.
+// *obligation.Resolver satisfies this interface.
 type UserAckReconciler interface {
-	// ReconcileUserAcks re-checks every version the user has acked and deletes the
-	// ones they are no longer obligated for; returns the number of rows removed.
+	// ReconcileUserAcks re-checks every version the user has pending and
+	// releases the ones they no longer owe; returns the number released. It
+	// never deletes an acknowledgement.
 	ReconcileUserAcks(ctx context.Context, userID string) (int, error)
 }
 
 // MembershipChangedConsumer handles AMQP messages on the "membership.changed"
 // routing key. When a user is removed from a directory group, the policies
-// whose audience included that group no longer obligate them, so their earlier
-// acknowledgements are orphaned. The consumer re-checks every version the user
-// acked and removes the ones they have left the audience of.
+// whose audience included that group no longer obligate them. The consumer
+// re-checks every version the user still owes and releases the ones they have
+// left the audience of. Acknowledgements already given are kept.
 type MembershipChangedConsumer struct {
 	reconciler UserAckReconciler
 }
@@ -40,8 +42,8 @@ func NewMembershipChangedConsumer(r UserAckReconciler) *MembershipChangedConsume
 }
 
 // Handle processes a single raw AMQP message body (JSON membershipChangedEvent).
-// It is idempotent: re-delivery re-runs the reconcile, a no-op once orphaned
-// acks are gone.
+// It is idempotent: re-delivery re-runs the reconcile, a no-op once the dropped
+// pending entries are released.
 func (c *MembershipChangedConsumer) Handle(ctx context.Context, body []byte) error {
 	var evt membershipChangedEvent
 	if err := json.Unmarshal(body, &evt); err != nil {

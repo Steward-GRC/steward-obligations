@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	authz "github.com/Steward-GRC/steward-authz"
 	corev1 "github.com/Steward-GRC/steward-obligations/gen/go/thirdparty/core/v1"
 	identityv1 "github.com/Steward-GRC/steward-obligations/gen/go/thirdparty/identity/v1"
 )
@@ -74,7 +73,7 @@ func (a *CoreAdapter) PolicyHomeGroup(ctx context.Context, policyID string) (str
 
 // PolicyNumber returns the policy's display number (e.g. "POL-001") for the
 // given policy ID. Used to look up per-policy overrides during RACI chain
-// evaluation for Completion / Roster / PurgeOrphanedAcks.
+// evaluation for Completion / Roster / ReleaseDroppedPending.
 func (a *CoreAdapter) PolicyNumber(ctx context.Context, policyID string) (string, error) {
 	resp, err := a.client.GetPolicy(ctx, &corev1.GetPolicyRequest{Id: policyID})
 	if err != nil {
@@ -218,17 +217,18 @@ func (a *IdentityAdapter) UserPolicyOverrides(ctx context.Context, userID string
 	return out, nil
 }
 
-// UserReadClearance returns the user's GLOBAL roles and their individual
-// read_sensitive grant via identity GetUser — the inputs to the obligation
-// sensitivity gate. Roles feed authz.PermissionsForRoles (compliance-admin /
-// site-admin carry policy.read_sensitive); the grant is the per-user override.
-func (a *IdentityAdapter) UserReadClearance(ctx context.Context, userID string) (roles []string, readSensitive bool, err error) {
+// UserReadClearance returns the user's GLOBAL roles, their individual
+// read_sensitive grant and whether they hold the root seat, via identity
+// GetUser: the inputs to the obligation sensitivity gate and the root
+// exemption. No role carries policy.read_sensitive; the grant is the per-user
+// override.
+func (a *IdentityAdapter) UserReadClearance(ctx context.Context, userID string) (roles []string, readSensitive, root bool, err error) {
 	resp, err := a.client.GetUser(ctx, &identityv1.GetUserRequest{UserId: userID})
 	if err != nil {
-		return nil, false, err
+		return nil, false, false, err
 	}
 	u := resp.GetUser()
-	return u.GetRoles(), u.GetReadSensitiveGrant(), nil
+	return u.GetRoles(), u.GetReadSensitiveGrant(), u.GetIsRoot(), nil
 }
 
 // ListAllUsers returns all ENABLED platform users — the candidate set the RACI
@@ -246,8 +246,11 @@ func (a *IdentityAdapter) ListAllUsers(ctx context.Context) ([]User, error) {
 }
 
 // ---------------------------------------------------------------------------
-// ChainAdapter builds a category's access-rule chain from core's
-// CategoryService.
+// ChainAdapter reads a category's effective ruleset from core's
+// CategoryService: the category's own levels and its ancestors', in one call.
+// ---------------------------------------------------------------------------
+
+// ChainAdapter adapts the generated CategoryServiceClient to categoryChains.
 type ChainAdapter struct {
 	cc corev1.CategoryServiceClient
 }
@@ -257,63 +260,16 @@ func NewChainAdapter(cc corev1.CategoryServiceClient) *ChainAdapter {
 	return &ChainAdapter{cc: cc}
 }
 
-// maxChainDepth bounds the walk to the root, as a guard against a cycle.
-const maxChainDepth = 20
-
-// BuildCategoryChain walks from categoryID up to the root: chain[0] is the
-// category itself, then each ancestor.
-func (a *ChainAdapter) BuildCategoryChain(ctx context.Context, categoryID string) ([]authz.CategoryRuleset, error) {
-	var chain []authz.CategoryRuleset
-	for id := categoryID; id != "" && len(chain) < maxChainDepth; {
-		c, err := a.cc.GetCategory(ctx, &corev1.GetCategoryRequest{Id: id})
-		if err != nil {
-			return nil, fmt.Errorf("get category %s: %w", id, err)
-		}
-		rs, err := a.cc.GetCategoryRuleset(ctx, &corev1.GetCategoryRulesetRequest{CategoryId: id})
-		if err != nil {
-			return nil, fmt.Errorf("get category ruleset %s: %w", id, err)
-		}
-		rules := make([]authz.Rule, 0, len(rs.GetRules()))
-		for _, r := range rs.GetRules() {
-			rules = append(rules, ruleFromProto(r))
-		}
-		cat := c.GetCategory()
-		chain = append(chain, authz.CategoryRuleset{Name: cat.GetName(), Owners: cat.GetOwners(), Rules: rules})
-		id = cat.GetParentId()
+// EffectiveLevels returns categoryID's chain, nearest level first, from one
+// GetEffectiveRuleset call. A chain with no levels is an error, never an empty
+// rule set, so a lookup that went wrong cannot read as "nobody is asked".
+func (a *ChainAdapter) EffectiveLevels(ctx context.Context, categoryID string) ([]*corev1.EffectiveLevel, error) {
+	resp, err := a.cc.GetEffectiveRuleset(ctx, &corev1.GetEffectiveRulesetRequest{CategoryId: categoryID})
+	if err != nil {
+		return nil, fmt.Errorf("get effective ruleset %s: %w", categoryID, err)
 	}
-	return chain, nil
-}
-
-func ruleFromProto(r *corev1.CategoryRule) authz.Rule {
-	return authz.Rule{
-		Subject: authz.RuleSubject{Kind: kindFromProto(r.GetSubjectKind()), Name: r.GetSubjectRef()},
-		Grants: map[authz.Action]authz.Grant{
-			authz.ActionRead:        grantFromProto(r.GetRead()),
-			authz.ActionAcknowledge: grantFromProto(r.GetAck()),
-			authz.ActionApprove:     grantFromProto(r.GetApprove()),
-			authz.ActionAuthor:      grantFromProto(r.GetAuthor()),
-		},
+	if len(resp.GetLevels()) == 0 {
+		return nil, fmt.Errorf("get effective ruleset %s: no levels", categoryID)
 	}
-}
-
-func grantFromProto(e corev1.GrantEffect) authz.Grant {
-	switch e {
-	case corev1.GrantEffect_GRANT_EFFECT_ALLOW:
-		return authz.GrantAllow
-	case corev1.GrantEffect_GRANT_EFFECT_DENY:
-		return authz.GrantDeny
-	default:
-		return authz.GrantBlank
-	}
-}
-
-func kindFromProto(k corev1.RuleSubjectKind) authz.SubjectKind {
-	switch k {
-	case corev1.RuleSubjectKind_RULE_SUBJECT_KIND_GROUP:
-		return authz.SubjectGroup
-	case corev1.RuleSubjectKind_RULE_SUBJECT_KIND_USER:
-		return authz.SubjectUser
-	default:
-		return authz.SubjectEveryone
-	}
+	return resp.GetLevels(), nil
 }

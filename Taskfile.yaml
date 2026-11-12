@@ -6,6 +6,8 @@ vars:
   GOLANGCI_VERSION: v2.12.2
   COMMON_LIC: "2026 The Steward Authors"
   TEMPLATE_LIC: "spdx-apache2"
+  CATALOG_REPO: Steward-GRC/steward-gateway
+  CATALOG_PATH: internal/authz/catalog.json
 tasks:
   default:
     cmds:
@@ -36,6 +38,17 @@ tasks:
     desc: Check proto/ for breaking changes against main
     cmds:
       - buf breaking proto --against '.git#branch=main,subdir=proto'
+  catalog:refresh:
+    desc: Re-fetch the canonical permission catalog at COMMIT into the embedded copy and testdata
+    requires:
+      vars: [COMMIT]
+    cmds:
+      - |
+        set -euo pipefail
+        gh api "repos/{{.CATALOG_REPO}}/contents/{{.CATALOG_PATH}}?ref={{.COMMIT}}" -H "Accept: application/vnd.github.raw" > testdata/catalog.canonical.json
+        cp testdata/catalog.canonical.json internal/authz/catalog.json
+        printf 'commit: %s\npath: %s\nrepo: %s\n' "{{.COMMIT}}" "{{.CATALOG_PATH}}" "{{.CATALOG_REPO}}" > testdata/CATALOG_SOURCE
+        go test -count=1 ./internal/authz
   docs:
     desc: Regenerate docs/error-codes.md from the error registry
     cmds:

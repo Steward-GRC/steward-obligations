@@ -3,7 +3,7 @@
 
 // Package obligation contains the standing-obligation resolver. It orchestrates
 // four narrow interfaces — coreObligations (core gRPC), identityUsers
-// (identity gRPC), categoryChains (RACI chain builder), and acksStore (local
+// (identity gRPC), categoryChains (core effective ruleset), and acksStore (local
 // ack persistence) — to answer:
 //
 // - MyObligations(userID): which published policies must this user ack?
@@ -19,17 +19,19 @@
 // satisfies the obligation. A NEW published version does NOT re-obligate a
 // user who already acked an older version.
 //
-// Obligation resolution (RACI chain):
+// Obligation resolution (go-authz ordered model, see access.go):
 //
 // For user U and obligating policy P (home category = P's home group id):
 // 1. override:= UserPolicyOverrides(U)[P.Number] (keyed by policy NUMBER)
 // 2. if override == "deny" → NO obligation (skip policy).
-// 3. chain:= BuildCategoryChain(P.homeGroupID)
-// 4. merit: the user and their directory groups, never site admin or root
-// 5. if override == "allow" → obligated iff the ungated acknowledge rule allows
-// (override grants READ out-of-band; the ack rule itself must still include U)
-// 6. else → obligated iff Resolve(merit, chain).Ack.Allowed
-// (covers: ack rule match AND read requirement; owners do NOT auto-ack)
+// 3. levels:= EffectiveLevels(P.homeGroupID), one core call, nearest first
+// 4. the person is U, their directory groups and, for the root seat only,
+// the root role; a site admin who is not root follows the rows
+// 5. if override == "allow" → obligated iff the Ack cell allows, without the
+// Read requirement (the override opens the document out-of-band)
+// 6. else → obligated iff Ack evaluates allowed AND Read evaluates allowed
+// (Ack requires Read; owners are not asked by ownership; root's Ack
+// follows the rule)
 //
 // Cross-service note: "acked any version" cannot be a pure SQL join inside
 // the obligations service because the acknowledgments table stores policy_version_id
@@ -46,7 +48,8 @@ import (
 	"fmt"
 	"time"
 
-	authz "github.com/Steward-GRC/steward-authz"
+	corev1 "github.com/Steward-GRC/steward-obligations/gen/go/thirdparty/core/v1"
+	"github.com/Steward-GRC/steward-obligations/internal/authz"
 	"github.com/Steward-GRC/steward-obligations/internal/logctx"
 	"github.com/Steward-GRC/steward-obligations/internal/store"
 )
@@ -175,7 +178,7 @@ type coreObligations interface {
 	// PolicyHomeGroup returns the policy's home group id.
 	PolicyHomeGroup(ctx context.Context, policyID string) (string, error)
 	// PolicyNumber returns the policy's display number (e.g. "POL-001") for the
-	// given policy ID. Used by Completion/Roster/PurgeOrphanedAcks to look up
+	// given policy ID. Used by Completion/Roster/ReleaseDroppedPending to look up
 	// per-policy overrides when evaluating obligation via the RACI chain.
 	PolicyNumber(ctx context.Context, policyID string) (string, error)
 	// PolicyDisplay returns the policy's display number and title in one call.
@@ -205,19 +208,21 @@ type identityUsers interface {
 	UserPolicyOverrides(ctx context.Context, userID string) (map[string]string, error)
 	// ListAllUsers returns all ENABLED users — the RACI audience candidate set.
 	ListAllUsers(ctx context.Context) ([]User, error)
-	// UserReadClearance returns the user's GLOBAL roles and their individual
-	// read_sensitive grant — the inputs to the sensitivity gate (a user cleared
-	// to READ a sensitive policy may be obligated to ack it). Backed by identity
+	// UserReadClearance returns the user's GLOBAL roles, their individual
+	// read_sensitive grant and whether they hold the root seat: the inputs to
+	// the sensitivity gate (a user cleared to READ a sensitive policy may be
+	// obligated to ack it) and to the root exemption. Backed by identity
 	// GetUser (the same read that supplies policy overrides).
-	UserReadClearance(ctx context.Context, userID string) (roles []string, readSensitive bool, err error)
+	UserReadClearance(ctx context.Context, userID string) (roles []string, readSensitive, root bool, err error)
 }
 
-// categoryChains builds the RACI category-ruleset chain for a given category.
-// The chain is walked leaf→root (target category first, then ancestors) and is
-// consumed by authz.Resolve / authz.Acknowledgement to decide per-user obligations.
+// categoryChains reads a category's effective ruleset from core: the category
+// first, then each ancestor, in one call. The levels feed the ordered model
+// (access.go) to decide per-user obligations.
 type categoryChains interface {
-	// BuildCategoryChain returns the ruleset chain for categoryID (home group id).
-	BuildCategoryChain(ctx context.Context, categoryID string) ([]authz.CategoryRuleset, error)
+	// EffectiveLevels returns the levels for categoryID (home group id),
+	// nearest first.
+	EffectiveLevels(ctx context.Context, categoryID string) ([]*corev1.EffectiveLevel, error)
 }
 
 // acksStore is the subset of the ack persistence layer the resolver requires.
@@ -228,9 +233,6 @@ type acksStore interface {
 	// AckedUserIDsForVersion returns the distinct user IDs that have acked the
 	// given policyVersionID.
 	AckedUserIDsForVersion(ctx context.Context, policyVersionID string) ([]string, error)
-	// DeleteAcksForUsers removes ack rows for the given users on the version and
-	// returns the number of rows deleted.
-	DeleteAcksForUsers(ctx context.Context, policyVersionID string, userIDs []string) (int, error)
 	// VersionsAckedByUser returns the distinct policy version IDs the user has
 	// acked.
 	VersionsAckedByUser(ctx context.Context, userID string) ([]string, error)
@@ -241,6 +243,21 @@ type acksStore interface {
 	AckedAtForVersion(ctx context.Context, policyVersionID string) (map[string]time.Time, error)
 	// DailyAckCounts returns YYYY-MM-DD (UTC) -> ack count at/after since.
 	DailyAckCounts(ctx context.Context, policyVersionID string, since time.Time) (map[string]int, error)
+}
+
+// pendingStore is the persisted state of acknowledgements still owed: for a
+// version, the reminder anchor of each person who has not acknowledged it.
+// Releasing it ends the reminders; it never touches an acknowledgement given.
+type pendingStore interface {
+	// PendingUserIDsForVersion returns the users with pending state on the
+	// version and no acknowledgement of it.
+	PendingUserIDsForVersion(ctx context.Context, policyVersionID string) ([]string, error)
+	// VersionsPendingForUser returns the versions the user has pending state
+	// on and has not acknowledged.
+	VersionsPendingForUser(ctx context.Context, userID string) ([]string, error)
+	// DeletePending removes the pending state of the users on the version,
+	// leaving anyone who has acknowledged it alone, and returns the count.
+	DeletePending(ctx context.Context, policyVersionID string, userIDs []string) (int, error)
 }
 
 // viewsStore is the subset of the policy-view persistence the resolver requires.
@@ -261,6 +278,9 @@ type Resolver struct {
 	chains categoryChains
 	acks   acksStore
 	views  viewsStore
+	// pending is the pending-ack state released when a person leaves an
+	// audience; nil leaves it alone.
+	pending pendingStore
 	// ackDueDays is the days after publish an acknowledgement is due; 0 means
 	// no due date.
 	ackDueDays int
@@ -274,6 +294,13 @@ const DefaultAckDueDays = 14
 // chains is satisfied by a ChainAdapter wrapping the group-service client.
 func NewResolver(core coreObligations, idn identityUsers, chains categoryChains, acks acksStore, views viewsStore) *Resolver {
 	return &Resolver{core: core, idn: idn, chains: chains, acks: acks, views: views, ackDueDays: DefaultAckDueDays}
+}
+
+// WithPendingStore sets the pending-ack state released when a person drops out
+// of an audience. It returns the resolver so it chains off NewResolver.
+func (r *Resolver) WithPendingStore(p pendingStore) *Resolver {
+	r.pending = p
+	return r
 }
 
 // WithAckDueDays sets how many days after a version is published its
@@ -315,43 +342,48 @@ type userCtx struct {
 	// consumed by the sensitivity gate in obligated.
 	roles         []string
 	readSensitive bool
+	// root is the root seat (identity's is_root): exempt from the sensitivity
+	// gate and for Read, but its Ack follows the category rule.
+	root bool
 }
 
 // policyCtx holds pre-fetched per-policy context for obligation evaluation.
 type policyCtx struct {
 	homeGroupID  string
 	policyNumber string
-	chain        []authz.CategoryRuleset
+	access       *categoryAccess
 	// sensitive is the policy's SENSITIVE classification; the sensitivity gate in
 	// obligated uses it to drop obligations for uncleared subjects.
 	sensitive bool
 }
 
 // obligated reports whether a user must acknowledge a policy under its
-// category chain. It is the one source of obligation truth for every path
-// (my obligations, my summary, audiences, completion, rosters, purges):
+// category rules. It is the one source of obligation truth for every path
+// (my obligations, my summary, audiences, completion, rosters, releases):
 //
-// 1. a deny override: no obligation;
-// 2. an allow override settles read, so only an acknowledge rule must match;
-// 3. otherwise the sensitivity gate, then the read-gated acknowledge decision.
+//  1. a deny override: no obligation;
+//  2. an allow override settles read, so only the Ack cell must allow;
+//  3. otherwise the sensitivity gate, then the ordered Ack decision, which
+//     requires Read.
 //
 // The sensitivity gate keeps an uncleared user from owing an acknowledgement
 // for a sensitive policy they can never open. It mirrors the gateway's read
-// gate, which an allow override also bypasses. The subject is evaluated on
-// merit only: site admin and root never auto-acknowledge.
-func obligated(ctx context.Context, userID string, uc userCtx, pc policyCtx) bool {
-	merit := authz.Subject{UserID: userID, Groups: uc.adGroups}
+// gate, which an allow override also bypasses and root is never held by. Owners
+// are not asked by ownership, root's Ack follows the rule, and a site admin who
+// is not root is decided by the rows like anyone else.
+func obligated(userID string, uc userCtx, pc policyCtx) bool {
+	person := personFor(userID, uc.adGroups, uc.root)
 	switch uc.overrides[pc.policyNumber] {
 	case "deny":
 		return false
 	case "allow":
-		return authz.Acknowledgement(ctx, merit, pc.chain).Allowed
+		return pc.access.ackAllowed(person, true)
 	default:
 		// The twin of the gateway's read gate: keep the two in lockstep.
-		if pc.sensitive && !authz.HasCapability(clearance(uc), authz.PolicyReadSensitive) {
+		if pc.sensitive && !uc.root && !authz.HasCapability(clearance(uc), authz.PolicyReadSensitive) {
 			return false
 		}
-		return authz.Resolve(ctx, merit, pc.chain).Acknowledge.Allowed
+		return pc.access.ackAllowed(person, false)
 	}
 }
 
@@ -363,7 +395,26 @@ func clearance(uc userCtx) authz.Subject {
 	for i, r := range uc.roles {
 		roles[i] = authz.Role(r)
 	}
-	return authz.Subject{Roles: roles, ReadSensitive: uc.readSensitive}
+	return authz.Subject{Roles: roles, ReadSensitive: uc.readSensitive, Root: uc.root}
+}
+
+// accessFor returns the category rules for a home group, reading them from core
+// once per request through cache. No chain source or no home group is an empty
+// rule set, which obligates no one.
+func (r *Resolver) accessFor(ctx context.Context, hg string, cache map[string]*categoryAccess) (*categoryAccess, error) {
+	if a, ok := cache[hg]; ok {
+		return a, nil
+	}
+	if r.chains == nil || hg == "" {
+		return newCategoryAccess(nil), nil
+	}
+	levels, err := r.chains.EffectiveLevels(ctx, hg)
+	if err != nil {
+		return nil, err
+	}
+	a := newCategoryAccess(levels)
+	cache[hg] = a
+	return a, nil
 }
 
 // ResolvePolicyObligation returns the ack obligation metadata for policyID. It
@@ -429,7 +480,7 @@ func (r *Resolver) audienceUsers(ctx context.Context, policyID string) ([]User, 
 	if r.chains == nil || hg == "" {
 		return nil, fmt.Errorf("no category chain available for policy %s (homeGroup=%q)", policyID, hg)
 	}
-	chain, err := r.chains.BuildCategoryChain(ctx, hg)
+	levels, err := r.chains.EffectiveLevels(ctx, hg)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +489,7 @@ func (r *Resolver) audienceUsers(ctx context.Context, policyID string) ([]User, 
 	if err != nil {
 		return nil, err
 	}
-	pc := policyCtx{homeGroupID: hg, policyNumber: num, chain: chain, sensitive: sensitive}
+	pc := policyCtx{homeGroupID: hg, policyNumber: num, access: newCategoryAccess(levels), sensitive: sensitive}
 
 	users, err := r.idn.ListAllUsers(ctx)
 	if err != nil {
@@ -455,12 +506,12 @@ func (r *Resolver) audienceUsers(ctx context.Context, policyID string) ([]User, 
 		if err != nil {
 			return nil, err
 		}
-		roles, readSensitive, err := r.idn.UserReadClearance(ctx, u.ID)
+		roles, readSensitive, root, err := r.idn.UserReadClearance(ctx, u.ID)
 		if err != nil {
 			return nil, err
 		}
-		uc := userCtx{adGroups: adGroups, overrides: overrides, roles: roles, readSensitive: readSensitive}
-		if obligated(ctx, u.ID, uc, pc) {
+		uc := userCtx{adGroups: adGroups, overrides: overrides, roles: roles, readSensitive: readSensitive, root: root}
+		if obligated(u.ID, uc, pc) {
 			out = append(out, u)
 		}
 	}
@@ -480,11 +531,11 @@ func (r *Resolver) MyObligations(ctx context.Context, userID string) ([]Obligati
 	if err != nil {
 		return nil, err
 	}
-	roles, readSensitive, err := r.idn.UserReadClearance(ctx, userID)
+	roles, readSensitive, root, err := r.idn.UserReadClearance(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	uc := userCtx{adGroups: adGroups, overrides: overrides, roles: roles, readSensitive: readSensitive}
+	uc := userCtx{adGroups: adGroups, overrides: overrides, roles: roles, readSensitive: readSensitive, root: root}
 
 	// 2. Fetch all currently obligating policies from core.
 	policies, err := r.core.ListObligatingPolicies(ctx)
@@ -493,7 +544,7 @@ func (r *Resolver) MyObligations(ctx context.Context, userID string) ([]Obligati
 	}
 
 	// Per-request chain cache: build each category's chain once per policy home group.
-	chainCache := make(map[string][]authz.CategoryRuleset)
+	accessCache := make(map[string]*categoryAccess)
 
 	var out []ObligationItem
 	for _, p := range policies {
@@ -507,21 +558,17 @@ func (r *Resolver) MyObligations(ctx context.Context, userID string) ([]Obligati
 		if err != nil {
 			return nil, err
 		}
-		chain, ok := chainCache[hg]
-		if !ok && r.chains != nil && hg != "" {
-			chain, err = r.chains.BuildCategoryChain(ctx, hg)
-			if err != nil {
-				return nil, err
-			}
-			chainCache[hg] = chain
+		access, err := r.accessFor(ctx, hg, accessCache)
+		if err != nil {
+			return nil, err
 		}
 
 		sensitive, err := r.core.PolicySensitivity(ctx, p.PolicyID)
 		if err != nil {
 			return nil, err
 		}
-		pc := policyCtx{homeGroupID: hg, policyNumber: p.Number, chain: chain, sensitive: sensitive}
-		if !obligated(ctx, userID, uc, pc) {
+		pc := policyCtx{homeGroupID: hg, policyNumber: p.Number, access: access, sensitive: sensitive}
+		if !obligated(userID, uc, pc) {
 			continue
 		}
 
@@ -657,11 +704,11 @@ func (r *Resolver) MyAckSummary(ctx context.Context, userID string) (required in
 	if err != nil {
 		return 0, 0, err
 	}
-	roles, readSensitive, err := r.idn.UserReadClearance(ctx, userID)
+	roles, readSensitive, root, err := r.idn.UserReadClearance(ctx, userID)
 	if err != nil {
 		return 0, 0, err
 	}
-	uc := userCtx{adGroups: adGroups, overrides: overrides, roles: roles, readSensitive: readSensitive}
+	uc := userCtx{adGroups: adGroups, overrides: overrides, roles: roles, readSensitive: readSensitive, root: root}
 
 	// 2. Fetch all currently obligating policies from core.
 	policies, err := r.core.ListObligatingPolicies(ctx)
@@ -670,7 +717,7 @@ func (r *Resolver) MyAckSummary(ctx context.Context, userID string) (required in
 	}
 
 	// Per-request chain cache.
-	chainCache := make(map[string][]authz.CategoryRuleset)
+	accessCache := make(map[string]*categoryAccess)
 
 	for _, p := range policies {
 		if overrides[p.Number] == "deny" {
@@ -681,21 +728,17 @@ func (r *Resolver) MyAckSummary(ctx context.Context, userID string) (required in
 		if err != nil {
 			return 0, 0, err
 		}
-		chain, ok := chainCache[hg]
-		if !ok && r.chains != nil && hg != "" {
-			chain, err = r.chains.BuildCategoryChain(ctx, hg)
-			if err != nil {
-				return 0, 0, err
-			}
-			chainCache[hg] = chain
+		access, err := r.accessFor(ctx, hg, accessCache)
+		if err != nil {
+			return 0, 0, err
 		}
 
 		sensitive, err := r.core.PolicySensitivity(ctx, p.PolicyID)
 		if err != nil {
 			return 0, 0, err
 		}
-		pc := policyCtx{homeGroupID: hg, policyNumber: p.Number, chain: chain, sensitive: sensitive}
-		if !obligated(ctx, userID, uc, pc) {
+		pc := policyCtx{homeGroupID: hg, policyNumber: p.Number, access: access, sensitive: sensitive}
+		if !obligated(userID, uc, pc) {
 			continue
 		}
 		required++
@@ -829,7 +872,7 @@ type ActivityDay struct {
 
 // audienceFor resolves the obligated audience users for a version's owning
 // policy using the RACI chain. It is the single audience source for all
-// version-keyed calls (Roster, PurgeOrphanedAcks, CompletionMetrics, Activity).
+// version-keyed calls (Roster, ReleaseDroppedPending, CompletionMetrics, Activity).
 // Returns nil (empty) if the policy has no ack requirement.
 func (r *Resolver) audienceFor(ctx context.Context, policyVersionID string) ([]User, error) {
 	policyID, err := r.core.PolicyIDForVersion(ctx, policyVersionID)
@@ -846,9 +889,15 @@ func (r *Resolver) audienceFor(ctx context.Context, policyVersionID string) ([]U
 	return r.audienceUsers(ctx, policyID)
 }
 
-// PurgeOrphanedAcks deletes ack rows for policyVersionID whose user is no longer
-// in the version's current RACI audience.
-func (r *Resolver) PurgeOrphanedAcks(ctx context.Context, policyVersionID string) (int, error) {
+// ReleaseDroppedPending removes the pending-ack state of people who are no
+// longer in policyVersionID's current audience: they stop owing the
+// acknowledgement and stop being reminded. An acknowledgement already given is
+// an attestation and is kept, whoever is in the audience now. It returns the
+// number of pending entries released.
+func (r *Resolver) ReleaseDroppedPending(ctx context.Context, policyVersionID string) (int, error) {
+	if r.pending == nil {
+		return 0, nil
+	}
 	audience, err := r.audienceFor(ctx, policyVersionID)
 	if err != nil {
 		return 0, err
@@ -858,33 +907,37 @@ func (r *Resolver) PurgeOrphanedAcks(ctx context.Context, policyVersionID string
 		audSet[u.ID] = struct{}{}
 	}
 
-	ackedIDs, err := r.acks.AckedUserIDsForVersion(ctx, policyVersionID)
+	pendingIDs, err := r.pending.PendingUserIDsForVersion(ctx, policyVersionID)
 	if err != nil {
 		return 0, err
 	}
 
-	var orphaned []string
-	for _, id := range ackedIDs {
+	var dropped []string
+	for _, id := range pendingIDs {
 		if _, ok := audSet[id]; !ok {
-			orphaned = append(orphaned, id)
+			dropped = append(dropped, id)
 		}
 	}
-	if len(orphaned) == 0 {
+	if len(dropped) == 0 {
 		return 0, nil
 	}
-	return r.acks.DeleteAcksForUsers(ctx, policyVersionID, orphaned)
+	return r.pending.DeletePending(ctx, policyVersionID, dropped)
 }
 
-// ReconcileUserAcks purges orphaned acks across every version the user has
-// acked.
+// ReconcileUserAcks releases the user's pending-ack state on every version they
+// no longer owe, after a membership change. Acknowledgements already given are
+// kept.
 func (r *Resolver) ReconcileUserAcks(ctx context.Context, userID string) (int, error) {
-	versionIDs, err := r.acks.VersionsAckedByUser(ctx, userID)
+	if r.pending == nil {
+		return 0, nil
+	}
+	versionIDs, err := r.pending.VersionsPendingForUser(ctx, userID)
 	if err != nil {
 		return 0, err
 	}
 	total := 0
 	for _, v := range versionIDs {
-		n, err := r.PurgeOrphanedAcks(ctx, v)
+		n, err := r.ReleaseDroppedPending(ctx, v)
 		if err != nil {
 			return total, err
 		}
@@ -893,7 +946,8 @@ func (r *Resolver) ReconcileUserAcks(ctx context.Context, userID string) (int, e
 	return total, nil
 }
 
-// ReconcilePolicyAcks purges orphaned acks across EVERY version of policyID.
+// ReconcilePolicyAcks releases dropped-out people's pending-ack state across
+// EVERY version of policyID. Acknowledgements already given are kept.
 func (r *Resolver) ReconcilePolicyAcks(ctx context.Context, policyID string) (int, error) {
 	versionIDs, err := r.core.ListPolicyVersionIDs(ctx, policyID)
 	if err != nil {
@@ -901,7 +955,7 @@ func (r *Resolver) ReconcilePolicyAcks(ctx context.Context, policyID string) (in
 	}
 	total := 0
 	for _, v := range versionIDs {
-		n, err := r.PurgeOrphanedAcks(ctx, v)
+		n, err := r.ReleaseDroppedPending(ctx, v)
 		if err != nil {
 			return total, err
 		}

@@ -6,7 +6,7 @@ The obligations service knows who must acknowledge which policy, records that th
 people what needs their attention.
 
 - **Obligations:** who owes an acknowledgement on which published version, worked out from each
-  policy's category rules (steward-authz), per-user overrides and sensitivity.
+  policy's category rules (go-authz ordered model), per-user overrides and sensitivity.
 - **Acknowledgements:** recorded once per user and version, with the audit event in the same
   transaction; views; the account-merge transfer.
 - **Reports:** completion, rosters, daily activity and an audit-quality export (CSV or JSON).
