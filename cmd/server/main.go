@@ -139,6 +139,7 @@ func run(ctx context.Context, lg log.Logger, logger zerolog.Logger) error {
 	notifCategoryStore := store.NewNotificationCategoryPrefStore(db)
 	notifOverrideStore := store.NewNotificationTypeOverrideStore(db)
 	notifDigestStore := store.NewNotificationDigestWindowStore(db)
+	notifQuietStore := store.NewNotificationQuietHoursStore(db)
 	notifStore := store.NewNotificationStore(db)
 	notifOutboxStore := store.NewNotificationOutboxStore(db)
 	notifSentStore := store.NewNotificationSentStore(db, mail.DefaultDedupWindow)
@@ -200,7 +201,7 @@ func run(ctx context.Context, lg log.Logger, logger zerolog.Logger) error {
 	identityClient := &identityGRPCAdapter{client: identityv1.NewIdentityReadServiceClient(identityConn)}
 	// One resolver backs both the sender's suppress hook and the dispatcher,
 	// so quiet hours are evaluated the same way in the user's own time zone.
-	prefResolver := notifpolicy.NewResolver(notifPrefReader, notify.QuietHours{Resolver: identityClient})
+	prefResolver := notifpolicy.NewResolver(notifPrefReader, notify.QuietHours{Resolver: identityClient, Windows: notifQuietStore})
 
 	senderCfg := mail.SenderConfig{
 		SMTPHost:        cfg.SMTPHost,
@@ -411,7 +412,7 @@ func run(ctx context.Context, lg log.Logger, logger zerolog.Logger) error {
 	}
 	err = server.Serve(ctx, lis, lg, opts, func(s *grpc.Server) {
 		obligationsv1.RegisterAckServiceServer(s, grpcsvc.NewAckHandler(ackSvc, policyViewStore))
-		obligationsv1.RegisterNotifPrefServiceServer(s, grpcsvc.NewNotifPrefHandler(notifPrefStore).WithSettings(notifSettings))
+		obligationsv1.RegisterNotifPrefServiceServer(s, grpcsvc.NewNotifPrefHandler(notifPrefStore).WithSettings(notifSettings).WithQuietHours(notifprefs.NewQuietService(notifQuietStore)))
 		obligationsv1.RegisterReportingServiceServer(s, grpcsvc.NewReportingHandler(reporting.NewExporter(store.NewAckExportStore(db)), resolver))
 		obligationsv1.RegisterObligationServiceServer(s, grpcsvc.NewObligationHandler(resolver))
 		obligationsv1.RegisterInboxServiceServer(s, grpcsvc.NewInboxHandler(inbox.NewService(store.NewInboxStore(db))))
