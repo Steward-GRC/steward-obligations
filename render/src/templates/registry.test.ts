@@ -61,6 +61,8 @@ test("keeps every kind name and default subject the sender relies on", () => {
     "welcome-account": "Your Steward account is ready",
     "workflow-awaiting-approval": "Your approval is needed",
     "workflow-denied": "Your submission was returned",
+    "workflow-escalated": "An approval is overdue in your category",
+    "workflow-reminder": "Reminder: an approval is waiting on you",
     "workflow-started": "A workflow has started",
   };
   assert.deepEqual([...EMAIL_KINDS].sort(), Object.keys(expected).sort());

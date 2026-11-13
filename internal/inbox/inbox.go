@@ -63,6 +63,7 @@ var legacyTypes = map[string]string{"ack_reminder": "policy-ack-reminder"}
 var needsActionKinds = map[string]bool{
 	"workflow-awaiting-approval": true,
 	"workflow-assigned":          true,
+	"workflow-reminder":          true,
 	"assigned-as-owner":          true,
 }
 
