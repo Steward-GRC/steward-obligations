@@ -65,8 +65,15 @@ func (h *WelcomeHandler) ResendWelcome(ctx context.Context, req *obligationsv1.R
 		return nil, status.Error(codes.InvalidArgument, "user_id is required")
 	}
 
+	logger := logctx.From(ctx)
+	logger.Debug().Str("user_id", userID).Msg("grpcsvc/welcome: resolving recipient")
 	name, email, err := h.users.ResolveWelcomeRecipient(ctx, userID)
 	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			logger.Warn().Str("user_id", userID).Msg("grpcsvc/welcome: recipient not found in identity")
+			return nil, status.Error(codes.NotFound, "user not found")
+		}
+		logger.Error().Err(err).Str("user_id", userID).Msg("grpcsvc/welcome: recipient lookup failed")
 		return nil, status.Errorf(codes.Internal, "resolve welcome recipient: %v", err)
 	}
 	if email == "" {
@@ -92,7 +99,6 @@ func (h *WelcomeHandler) ResendWelcome(ctx context.Context, req *obligationsv1.R
 		// recovery. Report success (it is guaranteed to send) rather than an
 		// error the admin would read as "lost".
 		if mail.IsPaused(err) {
-			logger := logctx.From(ctx)
 			logger.Warn().Str("user_id", userID).Msg("grpcsvc/welcome: send paused — held in outbox, will drain on recovery")
 			return &obligationsv1.ResendWelcomeResponse{Sent: true}, nil
 		}
