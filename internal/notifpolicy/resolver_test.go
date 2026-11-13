@@ -247,3 +247,47 @@ func TestTaxonomyClassification(t *testing.T) {
 		}
 	}
 }
+
+// TestWorkflowStageNoticesAreNotCriticalAndKeepQuietHours proves the stage
+// reminder (normal severity) and the escalation to category owners (high, not
+// critical) are ordinary workflow kinds: neither bypasses quiet hours, email is
+// held in the window, and the in-app notice is still delivered.
+func TestWorkflowStageNoticesAreNotCriticalAndKeepQuietHours(t *testing.T) {
+	want := map[string]notifpolicy.Severity{
+		"workflow-reminder":  notifpolicy.SeverityNormal,
+		"workflow-escalated": notifpolicy.SeverityHigh,
+	}
+	for kind, sev := range want {
+		class, ok := notifpolicy.Classify(kind)
+		if !ok {
+			t.Fatalf("%s: not classified", kind)
+		}
+		if class.Category != notifpolicy.CategoryWorkflow || class.Severity != sev {
+			t.Errorf("%s: got %s/%s want workflow/%s", kind, class.Category, class.Severity, sev)
+		}
+		if class.Mandatory() || class.BypassQuietHours() {
+			t.Errorf("%s: must be optional and must not bypass quiet hours by category", kind)
+		}
+
+		quiet := resolve(t, newReader(nil, nil), true, kind)
+		if quiet.BypassQuietHours {
+			t.Errorf("%s: must not bypass quiet hours", kind)
+		}
+		if quiet.Email || quiet.Push {
+			t.Errorf("%s: email and push must be held in quiet hours", kind)
+		}
+		if !quiet.Deliver || !quiet.InApp {
+			t.Errorf("%s: the in-app notice must still be delivered in quiet hours", kind)
+		}
+
+		open := resolve(t, newReader(nil, nil), false, kind)
+		if !open.Email || !open.InApp || open.Mode != notifpolicy.ModeImmediate {
+			t.Errorf("%s: outside quiet hours want immediate email and in-app, got %+v", kind, open)
+		}
+
+		daily := resolve(t, newReader(map[notifpolicy.Category]notifpolicy.Cadence{notifpolicy.CategoryWorkflow: notifpolicy.CadenceDaily}, nil), false, kind)
+		if daily.Mode != notifpolicy.ModeBatch {
+			t.Errorf("%s: a daily workflow preference folds it into the digest, got %s", kind, daily.Mode)
+		}
+	}
+}

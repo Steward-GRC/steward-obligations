@@ -39,6 +39,8 @@ import {
   sampleVars as workflowAwaitingApprovalSampleVars,
 } from "./workflowAwaitingApproval.js";
 import { WorkflowDenied, sampleVars as workflowDeniedSampleVars } from "./workflowDenied.js";
+import { WorkflowEscalated, sampleVars as workflowEscalatedSampleVars } from "./workflowEscalated.js";
+import { WorkflowReminder, sampleVars as workflowReminderSampleVars } from "./workflowReminder.js";
 import { WorkflowStarted, sampleVars as workflowStartedSampleVars } from "./workflowStarted.js";
 
 // The kind strings are the wire contract with the Go sender; renaming one
@@ -59,6 +61,8 @@ export const EMAIL_KINDS = [
   "workflow-started",
   "workflow-awaiting-approval",
   "workflow-denied",
+  "workflow-reminder",
+  "workflow-escalated",
   "domain-verification-instructions",
   "domain-verified",
   "idp-test-failed",
@@ -105,6 +109,8 @@ export const EMAIL_COMPONENTS: Record<EmailKind, ComponentType<any>> = {
   "welcome-account": WelcomeAccount,
   "workflow-awaiting-approval": WorkflowAwaitingApproval,
   "workflow-denied": WorkflowDenied,
+  "workflow-escalated": WorkflowEscalated,
+  "workflow-reminder": WorkflowReminder,
   "workflow-started": WorkflowStarted,
 };
 
@@ -135,6 +141,8 @@ export const EMAIL_SUBJECTS: Record<EmailKind, (productName: string) => string> 
   "welcome-account": (product) => `Your ${product} account is ready`,
   "workflow-awaiting-approval": () => "Your approval is needed",
   "workflow-denied": () => "Your submission was returned",
+  "workflow-escalated": () => "An approval is overdue in your category",
+  "workflow-reminder": () => "Reminder: an approval is waiting on you",
   "workflow-started": () => "A workflow has started",
 };
 
@@ -170,5 +178,7 @@ export const EMAIL_SAMPLE_VARS: Record<EmailKind, Record<string, unknown>> = {
   "welcome-account": asVars(welcomeAccountSampleVars),
   "workflow-awaiting-approval": asVars(workflowAwaitingApprovalSampleVars),
   "workflow-denied": asVars(workflowDeniedSampleVars),
+  "workflow-escalated": asVars(workflowEscalatedSampleVars),
+  "workflow-reminder": asVars(workflowReminderSampleVars),
   "workflow-started": asVars(workflowStartedSampleVars),
 };

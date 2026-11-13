@@ -61,6 +61,8 @@ with an `Allow` header.
 | `workflow-started` | A workflow has started |
 | `workflow-awaiting-approval` | Your approval is needed |
 | `workflow-denied` | Your submission was returned |
+| `workflow-reminder` | Reminder: an approval is waiting on you |
+| `workflow-escalated` | An approval is overdue in your category |
 | `domain-verification-instructions` | Verify your domain to enable SSO |
 | `domain-verified` | Your domain has been verified |
 | `idp-test-failed` | Your SSO connection test failed |

@@ -42,7 +42,7 @@ func TestAllClassesCoversEveryClassifiableKind(t *testing.T) {
 // TestAllClassesTaxonomySize pins the taxonomy size so adding or removing a
 // notification type is a deliberate, reviewed change.
 func TestAllClassesTaxonomySize(t *testing.T) {
-	if got, want := len(notifpolicy.AllClasses()), 27; got != want {
+	if got, want := len(notifpolicy.AllClasses()), 29; got != want {
 		t.Errorf("taxonomy size = %d, want %d (update this test deliberately)", got, want)
 	}
 }
