@@ -119,3 +119,31 @@ func TestResendWelcome_SenderErrorIsInternal(t *testing.T) {
 		t.Fatalf("code = %v, want Internal", status.Code(err))
 	}
 }
+
+// A lookup that reports NotFound (identity has no such user) is a NotFound for
+// the admin, not an Internal error, and nothing is sent.
+func TestResendWelcome_UnknownUserIsNotFound(t *testing.T) {
+	res := &fakeWelcomeResolver{err: status.Error(codes.NotFound, "not found")}
+	snd := &fakeWelcomeSender{}
+	h := grpcsvc.NewWelcomeHandler(res, snd, "https://portal")
+	_, err := h.ResendWelcome(context.Background(), &obligationsv1.ResendWelcomeRequest{UserId: "u-missing"})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("code = %v, want NotFound", status.Code(err))
+	}
+	if got := status.Convert(err).Message(); got != "user not found" {
+		t.Fatalf("message = %q, want %q", got, "user not found")
+	}
+	if snd.last.kind != "" {
+		t.Fatalf("a welcome email was sent for an unknown user: %+v", snd.last)
+	}
+}
+
+// Other gRPC failures from the lookup (identity unavailable, say) stay Internal.
+func TestResendWelcome_UnavailableLookupIsInternal(t *testing.T) {
+	res := &fakeWelcomeResolver{err: status.Error(codes.Unavailable, "identity down")}
+	h := grpcsvc.NewWelcomeHandler(res, &fakeWelcomeSender{}, "https://portal")
+	_, err := h.ResendWelcome(context.Background(), &obligationsv1.ResendWelcomeRequest{UserId: "u-1"})
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("code = %v, want Internal", status.Code(err))
+	}
+}
