@@ -35,6 +35,8 @@ func TestDescribeDerivesCategoryAndNeedsActionFromTheTaxonomy(t *testing.T) {
 		{"workflow-assigned", notifpolicy.CategoryWorkflow, true},
 		{"assigned-as-owner", notifpolicy.CategoryWorkflow, true},
 		{"workflow-denied", notifpolicy.CategoryWorkflow, false},
+		{"workflow-reminder", notifpolicy.CategoryWorkflow, true},
+		{"workflow-escalated", notifpolicy.CategoryWorkflow, false},
 		{"workflow-started", notifpolicy.CategoryWorkflow, false},
 		{"policy-published", notifpolicy.CategoryInformational, false},
 		{"break-glass-read-alert", notifpolicy.CategorySecurity, false},

@@ -148,6 +148,8 @@ var taxonomy = map[string]Class{
 	"workflow-denied":            {Kind: "workflow-denied", Category: CategoryWorkflow, Severity: SeverityHigh, Delivery: DeliveryImmediateOrDigest},
 	"workflow-assigned":          {Kind: "workflow-assigned", Category: CategoryWorkflow, Severity: SeverityHigh, Delivery: DeliveryImmediateOrDigest},
 	"assigned-as-owner":          {Kind: "assigned-as-owner", Category: CategoryWorkflow, Severity: SeverityHigh, Delivery: DeliveryImmediateOrDigest},
+	"workflow-reminder":          {Kind: "workflow-reminder", Category: CategoryWorkflow, Severity: SeverityNormal, Delivery: DeliveryImmediateOrDigest}, // overdue-stage nudge to a pending approver.
+	"workflow-escalated":         {Kind: "workflow-escalated", Category: CategoryWorkflow, Severity: SeverityHigh, Delivery: DeliveryImmediateOrDigest},  // overdue-stage notice to the category owners; high, never critical.
 	"workflow-started":           {Kind: "workflow-started", Category: CategoryWorkflow, Severity: SeverityNormal, Delivery: DeliveryDigestPreferred, DefaultCadence: CadenceDaily},
 
 	// --- Transactional (mandatory; bypass quiet hours) ---

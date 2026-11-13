@@ -263,3 +263,20 @@ func (l rabbitLogger) Errorf(format string, args ...any) { l.logger.Error().Msgf
 func ackAuditEmitter(sink ackpkg.AuditSink) ackpkg.AuditEmitter {
 	return ackpkg.NewPlatformAuditAdapter(ackpkg.NewImpersonationSink(sink))
 }
+
+// notifInAppWriter adapts *store.NotificationStore to consumer.InAppNoticeWriter:
+// one in-app notice is a notifications row whose type is the notification kind,
+// so the inbox classifies it from the taxonomy.
+type notifInAppWriter struct {
+	store *store.NotificationStore
+}
+
+func (a notifInAppWriter) WriteNotice(ctx context.Context, userID, kind string, payload map[string]any) error {
+	_, err := a.store.Insert(ctx, store.Notification{
+		UserID:  userID,
+		Type:    kind,
+		Channel: "in_app",
+		Payload: payload,
+	})
+	return err
+}

@@ -78,6 +78,8 @@ const PREFERENCES_LINK_KINDS = new Set([
   "workflow-started",
   "workflow-awaiting-approval",
   "workflow-denied",
+  "workflow-reminder",
+  "workflow-escalated",
   "domain-verification-instructions",
   "domain-verified",
   "idp-test-failed",
@@ -182,3 +184,29 @@ for (const kind of EMAIL_KINDS) {
     });
   }
 }
+
+test("workflow-reminder names the policy, step and due date and links to the approvals inbox", async () => {
+  const vars = EMAIL_SAMPLE_VARS["workflow-reminder"] as Record<string, string>;
+  const html = await renderKind("workflow-reminder");
+  assert.ok(html.includes("An approval is waiting on you"));
+  assert.ok(html.includes("Desk Booking Policy"));
+  assert.ok(html.includes("Legal review"));
+  assert.ok(html.includes("August 4, 2026"));
+  assert.ok(html.includes(vars.approveUrl));
+});
+
+test("workflow-reminder omits the due callout when no due date is given", async () => {
+  const { dueBy, ...withoutDue } = EMAIL_SAMPLE_VARS["workflow-reminder"];
+  assert.ok(typeof dueBy === "string");
+  const html = await renderKind("workflow-reminder", withoutDue);
+  assert.ok(!html.includes("Was due"));
+});
+
+test("workflow-escalated shows the pending count, says it is a notice only and links to the workflows", async () => {
+  const vars = EMAIL_SAMPLE_VARS["workflow-escalated"] as Record<string, string>;
+  const html = await renderKind("workflow-escalated");
+  assert.ok(html.includes("An approval is overdue in your category"));
+  assert.ok(html.includes("Approvers still to decide"));
+  assert.ok(html.includes("Nothing has been approved or rejected on your behalf"));
+  assert.ok(html.includes(vars.workflowUrl));
+});
