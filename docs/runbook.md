@@ -43,7 +43,7 @@ is reused for 5 seconds.
 | Calls to core or identity fail with `read WORKLOAD_TOKEN_FILE` | Obligations' own token mount went away. |
 | `Code 7001: Internal Error` | A store call failed; the log line with the same trace id names the `op`. |
 | Audit events stop arriving | `SELECT status, count(*) FROM audit_outbox GROUP BY status`: `pending` rows mean the relay can't publish (check RabbitMQ), `dead` rows have their last error kept. |
-| Email isn't going out | `mail_outbox` rows with `status = 'pending'` are held: no working transport, the email service over its limit, or the render sidecar down. |
+| Email isn't going out | `mail_outbox` rows with `status = 'pending'` are held: no working transport, the email service over its limit, or the render sidecar down (the row keeps the render inputs in `render_vars` and is rendered when it is replayed). |
 | Quiet hours or digests at the wrong hour | The person's own window (`notification_quiet_hours`, with its own zone), else 22:00 to 07:00 in the time zone in identity; unset falls back to UTC. Quiet hours hold email and push only, never in-app. Security and transactional kinds and critical-severity kinds bypass the window; high-severity compliance kinds (ack-required, policy-ack-reminder, review-due) are held. A held message is dropped, not sent later. |
 | No push | `FCM_PROJECT_ID` is unset, which is the default. |
 

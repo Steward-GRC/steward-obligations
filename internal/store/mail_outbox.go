@@ -26,6 +26,9 @@ type MailOutboxRow struct {
 	DedupKey  string // "" ⇒ stored NULL (dedup disabled for the row)
 	Attempts  int
 	LastError string
+	// RenderVars is the JSON render inputs of a row held because the sidecar
+	// was down (subject and html are then empty); nil for a rendered row.
+	RenderVars []byte
 }
 
 // MailOutboxStore persists and drains the mail_outbox hold queue.
@@ -45,11 +48,15 @@ func (s *MailOutboxStore) Enqueue(ctx context.Context, r MailOutboxRow) error {
 	if r.DedupKey != "" {
 		dedup = &r.DedupKey
 	}
+	var renderVars any // NULL for a rendered row
+	if len(r.RenderVars) > 0 {
+		renderVars = r.RenderVars
+	}
 	_, err := s.db.Querier().Exec(ctx, `
-        INSERT INTO mail_outbox (kind, recipient, from_addr, subject, html, text_body, user_id, dedup_key)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO mail_outbox (kind, recipient, from_addr, subject, html, text_body, user_id, dedup_key, render_vars)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (dedup_key) WHERE dedup_key IS NOT NULL AND status <> 'failed' DO NOTHING`,
-		r.Kind, r.Recipient, r.From, r.Subject, r.HTML, r.Text, r.UserID, dedup)
+		r.Kind, r.Recipient, r.From, r.Subject, r.HTML, r.Text, r.UserID, dedup, renderVars)
 	return err
 }
 
@@ -60,7 +67,7 @@ func (s *MailOutboxStore) Enqueue(ctx context.Context, r MailOutboxRow) error {
 func (s *MailOutboxStore) ClaimPending(ctx context.Context, limit int) ([]MailOutboxRow, error) {
 	rows, err := s.db.Querier().Query(ctx, `
         SELECT id, kind, recipient, from_addr, subject, html, text_body, user_id,
-               COALESCE(dedup_key, ''), attempts, last_error
+               COALESCE(dedup_key, ''), attempts, last_error, render_vars
           FROM mail_outbox
          WHERE status = 'pending' AND next_attempt_at <= now()
          ORDER BY created_at ASC
@@ -74,7 +81,7 @@ func (s *MailOutboxStore) ClaimPending(ctx context.Context, limit int) ([]MailOu
 	for rows.Next() {
 		var r MailOutboxRow
 		if err := rows.Scan(&r.ID, &r.Kind, &r.Recipient, &r.From, &r.Subject,
-			&r.HTML, &r.Text, &r.UserID, &r.DedupKey, &r.Attempts, &r.LastError); err != nil {
+			&r.HTML, &r.Text, &r.UserID, &r.DedupKey, &r.Attempts, &r.LastError, &r.RenderVars); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
