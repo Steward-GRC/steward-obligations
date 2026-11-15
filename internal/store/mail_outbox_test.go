@@ -153,3 +153,19 @@ func TestMailOutbox_ClaimFIFO(t *testing.T) {
 	require.Equal(t, "b@example.com", rows[1].Recipient)
 	require.Equal(t, "c@example.com", rows[2].Recipient)
 }
+
+func TestMailOutbox_RenderVarsRoundTrip(t *testing.T) {
+	pool := newTestDB(t)
+	ctx := context.Background()
+	s := store.NewMailOutboxStore(pool)
+
+	held := store.MailOutboxRow{Kind: "policy-ack-reminder", Recipient: "user@example.com", DedupKey: "dk-render", RenderVars: []byte(`{"policy_version_id":"pv1"}`)}
+	require.NoError(t, s.Enqueue(ctx, held))
+	require.NoError(t, s.Enqueue(ctx, sampleRow("dk-rendered")))
+
+	rows, err := s.ClaimPending(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	require.JSONEq(t, `{"policy_version_id":"pv1"}`, string(rows[0].RenderVars))
+	require.Empty(t, rows[1].RenderVars)
+}

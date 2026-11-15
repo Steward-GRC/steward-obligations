@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,6 +31,12 @@ const defaultTimeout = 10 * time.Second
 // tracer emits a span per sidecar render call onto the global TracerProvider
 // wired by the binary's gootel.Init call.
 var tracer = otel.Tracer("github.com/Steward-GRC/steward-obligations/internal/mail")
+
+// ErrRenderUnavailable marks a render that failed because the sidecar is down
+// or erroring (connection failure, timeout, 5xx), as opposed to a request the
+// sidecar rejected. The sender holds the email's render inputs in the outbox
+// for it and the drainer renders them once the sidecar is back.
+var ErrRenderUnavailable = errors.New("mail: render sidecar unavailable")
 
 // renderRequest is the wire payload posted to the sidecar's /render endpoint.
 type renderRequest struct {
@@ -92,7 +99,7 @@ func (r *SidecarRenderer) Render(ctx context.Context, kind string, data any) (em
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "call render sidecar")
 		logger.Error().Err(err).Str("kind", kind).Msg("render sidecar call failed")
-		return email.Rendered{}, fmt.Errorf("mail: call render sidecar for kind %q: %w", kind, err)
+		return email.Rendered{}, fmt.Errorf("mail: call render sidecar for kind %q: %w: %w", kind, ErrRenderUnavailable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -102,6 +109,9 @@ func (r *SidecarRenderer) Render(ctx context.Context, kind string, data any) (em
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		span.SetStatus(codes.Error, "render sidecar non-200")
 		logger.Error().Int("status", resp.StatusCode).Str("kind", kind).Msg("render sidecar returned non-200")
+		if resp.StatusCode >= http.StatusInternalServerError {
+			return email.Rendered{}, fmt.Errorf("mail: render sidecar returned %d for kind %q: %w: %s", resp.StatusCode, kind, ErrRenderUnavailable, bytes.TrimSpace(respBody))
+		}
 		return email.Rendered{}, fmt.Errorf("mail: render sidecar returned %d for kind %q: %s", resp.StatusCode, kind, bytes.TrimSpace(respBody))
 	}
 

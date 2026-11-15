@@ -5,6 +5,8 @@ package mail
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -199,6 +201,7 @@ type Sender struct {
 	from     string
 	branding map[string]string
 	unsub    *unsubLinks
+	outbox   OutboxWriter // holds sends whose render failed; nil without WithPauseGate
 }
 
 // NewSender builds a Sender backed by:
@@ -377,7 +380,7 @@ func NewSender(cfg SenderConfig, opts ...Option) (*Sender, error) {
 			branding[k] = v
 		}
 	}
-	return &Sender{sender: sender, from: from, branding: branding, unsub: o.unsub}, nil
+	return &Sender{sender: sender, from: from, branding: branding, unsub: o.unsub, outbox: o.pauseOutbox}, nil
 }
 
 // SendRendered replays an already-rendered, held OutboxItem back through the
@@ -408,6 +411,20 @@ func (s *Sender) SendRendered(ctx context.Context, it OutboxItem) error {
 	}
 	if it.DedupKey != "" {
 		msg.Meta["dedup_key"] = it.DedupKey
+	}
+	if len(it.RenderVars) > 0 {
+		var vars any
+		if err := json.Unmarshal(it.RenderVars, &vars); err != nil {
+			return fmt.Errorf("mail: replay kind %q to %q: decode render inputs: %w", it.Kind, it.Recipient, err)
+		}
+		if err := s.sender.SendKind(ctx, it.Kind, msg, vars); err != nil {
+			if errors.Is(err, ErrRenderUnavailable) {
+				// Still down: let the drainer back off and try again.
+				err = email.TransientError{Err: err}
+			}
+			return fmt.Errorf("mail: replay kind %q to %q: %w", it.Kind, it.Recipient, err)
+		}
+		return nil
 	}
 	if err := s.sender.Send(ctx, msg); err != nil {
 		return fmt.Errorf("mail: replay kind %q to %q: %w", it.Kind, it.Recipient, err)
@@ -482,9 +499,35 @@ func (s *Sender) Send(ctx context.Context, kind, userID, to, dedupRef string, va
 	// List-Unsubscribe headers on OPTIONAL sends only. See applyUnsubscribeLinks.
 	s.applyUnsubscribeLinks(&msg, kind, userID, vars)
 	if err := s.sender.SendKind(ctx, kind, msg, vars); err != nil {
+		if errors.Is(err, ErrRenderUnavailable) {
+			return s.holdForRender(ctx, kind, &msg, vars, err)
+		}
 		return fmt.Errorf("mail: send kind %q to %q: %w", kind, to, err)
 	}
 	return nil
+}
+
+// holdForRender holds an email whose render failed because the sidecar is down:
+// the render inputs go to the outbox and the send reports ErrMailPaused so the
+// consumer acks it, as for any held send. Without an outbox, or when the hold
+// itself fails, the original error is returned so the message is not acked as
+// held.
+func (s *Sender) holdForRender(ctx context.Context, kind string, msg *email.Message, vars any, cause error) error {
+	if s.outbox == nil {
+		return fmt.Errorf("mail: send kind %q to %q: %w", kind, strings.Join(msg.To, ","), cause)
+	}
+	raw, err := json.Marshal(vars)
+	if err != nil {
+		return fmt.Errorf("mail: send kind %q: marshal render inputs: %w", kind, err)
+	}
+	it := outboxItemFromMessage(msg)
+	it.RenderVars = raw
+	if err := s.outbox.Enqueue(ctx, it); err != nil {
+		return fmt.Errorf("mail: hold kind %q for render: %w: %w", kind, err, cause)
+	}
+	logger := logctx.From(ctx)
+	logger.Warn().Str("kind", kind).Msg("mail: render sidecar unavailable, email held in outbox")
+	return ErrMailPaused
 }
 
 // applyUnsubscribeLinks stamps the signed manage/unsubscribe affordances onto a

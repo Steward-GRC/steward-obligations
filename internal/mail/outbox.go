@@ -13,7 +13,8 @@ import (
 
 // OutboxItem is one durable, held email: a fully-rendered message captured by
 // the pause-gate (see PauseGate) when there is no working transport, plus the
-// replay bookkeeping the drainer needs. It is deliberately the RENDERED message
+// replay bookkeeping the drainer needs. Apart from a row held because the
+// render sidecar was down (see RenderVars), it is deliberately the RENDERED message
 // (subject/html/text already through the render sidecar) rather than the render
 // inputs, so a replay re-SENDS the exact bytes the recipient would have gotten
 // — no dependency on the sidecar still rendering the same output later.
@@ -44,6 +45,11 @@ type OutboxItem struct {
 	// row per key, so a redelivered trigger never double-holds and a replay
 	// never double-sends. Empty when the original send disabled dedup.
 	DedupKey string
+	// RenderVars is the JSON of the render inputs, set only on a row held
+	// because the render sidecar was down: Subject and HTML are then empty and
+	// the replay renders Kind with these vars first. Empty on every row held
+	// after rendering.
+	RenderVars []byte
 	// Attempts counts replay attempts (populated by ClaimPending).
 	Attempts int
 	// LastError is the most recent replay failure reason (populated by

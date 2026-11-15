@@ -105,17 +105,18 @@ func (a mailOutboxStore) ClaimPending(ctx context.Context, limit int) ([]mail.Ou
 	out := make([]mail.OutboxItem, len(rows))
 	for i, r := range rows {
 		out[i] = mail.OutboxItem{
-			ID:        r.ID,
-			Kind:      r.Kind,
-			UserID:    r.UserID,
-			Recipient: r.Recipient,
-			From:      r.From,
-			Subject:   r.Subject,
-			HTML:      r.HTML,
-			Text:      r.Text,
-			DedupKey:  r.DedupKey,
-			Attempts:  r.Attempts,
-			LastError: r.LastError,
+			ID:         r.ID,
+			Kind:       r.Kind,
+			UserID:     r.UserID,
+			Recipient:  r.Recipient,
+			From:       r.From,
+			Subject:    r.Subject,
+			HTML:       r.HTML,
+			Text:       r.Text,
+			DedupKey:   r.DedupKey,
+			Attempts:   r.Attempts,
+			LastError:  r.LastError,
+			RenderVars: r.RenderVars,
 		}
 	}
 	return out, nil
@@ -135,17 +136,18 @@ func (a mailOutboxStore) Reschedule(ctx context.Context, id, lastErr string, nex
 
 func toOutboxRow(it mail.OutboxItem) store.MailOutboxRow {
 	return store.MailOutboxRow{
-		ID:        it.ID,
-		Kind:      it.Kind,
-		Recipient: it.Recipient,
-		From:      it.From,
-		Subject:   it.Subject,
-		HTML:      it.HTML,
-		Text:      it.Text,
-		UserID:    it.UserID,
-		DedupKey:  it.DedupKey,
-		Attempts:  it.Attempts,
-		LastError: it.LastError,
+		ID:         it.ID,
+		Kind:       it.Kind,
+		Recipient:  it.Recipient,
+		From:       it.From,
+		Subject:    it.Subject,
+		HTML:       it.HTML,
+		Text:       it.Text,
+		UserID:     it.UserID,
+		DedupKey:   it.DedupKey,
+		Attempts:   it.Attempts,
+		LastError:  it.LastError,
+		RenderVars: it.RenderVars,
 	}
 }
 
