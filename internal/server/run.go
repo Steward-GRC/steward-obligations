@@ -150,7 +150,7 @@ func Serve(ctx context.Context, lis net.Listener, lg log.Logger, opts Options, r
 		case <-time.After(gracefulStopTimeout):
 			s.Stop()
 		}
-		<-errCh
+		awaitServe(errCh)
 		return nil
 	}
 }
@@ -183,7 +183,7 @@ func ServeProbes(ctx context.Context, lis net.Listener, checker *health.Checker)
 		sctx, cancel := context.WithTimeout(context.Background(), gracefulStopTimeout)
 		defer cancel()
 		_ = srv.Shutdown(sctx)
-		<-errCh
+		awaitServe(errCh)
 		return nil
 	}
 }
@@ -235,4 +235,11 @@ func recovered(ctx context.Context, lg log.Logger, r any, method string) error {
 	lg.Ctx(ctx).Error(nil, "recovered from a panic in a gRPC handler",
 		log.F("method", method), log.F("panic", r), log.F("stack", string(debug.Stack())))
 	return status.Error(codes.Internal, "internal error")
+}
+
+// awaitServe waits for the serving goroutine to return after a stop. The error
+// it returns then (the listener closing) is expected, so it is dropped.
+func awaitServe(errCh <-chan error) {
+	err := <-errCh
+	_ = err
 }
